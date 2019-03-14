@@ -15,16 +15,26 @@
 
   (define v (vector 'a 'b))
   (define h (hash 'a 1 'b v))
-  (define h! (make-hash `((a . 1) (b . ,v)))))
+  (define h! (make-hash `((a . 1) (b . ,v))))
+  (define alist '((a . 1) (b . 2))))
 
 
 (define associative-on-key-missing (make-parameter make-hash))
 
 
+(define (alist? h)
+  (and (list? h) (andmap pair? h)))
+
+
 (define-generics associative
   (assoc-get associative key [default])
   (assoc-set associative key val)
-  #:fast-defaults ((dict?
+  #:fast-defaults ((alist?
+                    (define (assoc-get table key [default (lambda () (error "key not found" key))])
+                      (dict-ref table key default))
+                    (define (assoc-set table key val)
+                      (dict-set table key val)))
+                   (dict?
                     ;; TODO should I return undefined on key missing instead of
                     ;; throwing like dict does?
                     (define (assoc-get table key [default (lambda () (error "key not found" key))])
@@ -34,19 +44,7 @@
                           (dict-set table key val)
                           (begin
                             (dict-set! table key val)
-                            table))))
-                   ;; TODO rethink this cause gen:dict is implemented for list? of
-                   ;; pairs i.e. an alist, so I probably ought to follow suite. We
-                   ;; typically want integer refs for vectors anyway
-                   (list?
-                    (define (assoc-get table key)
-                      (unless (integer? key)
-                        (error "Expected integer key"))
-                      (list-ref table key))
-                    (define (assoc-set table key val)
-                      (unless (integer? key)
-                        (error "Expected integer key"))
-                      (list-set table key val)))))
+                            table))))))
 
 
 ;; TODO [#:default thunk] keyword arg that returns default value on key missing
@@ -80,8 +78,16 @@
   (parameterize ((associative-on-key-missing hash))
     (set! h (set: h 'c 'd 'e 42)))
   (check eq? 42 (get: h 'c 'd 'e))
-  (check-pred immutable? (get: h 'c 'd)))
+  (check-pred immutable? (get: h 'c 'd))
 
+  ;; alists
+  (set! alist (set: alist 'b 42))
+  (check-pred alist? alist)
+  (check-eq? 42 (get: alist 'b))
+  (check-eq? 42 (get: (set: alist 'c 'd 'e 42) 'c 'd 'e))
+  ;; yep, we can totally make nested alists
+  (parameterize ((associative-on-key-missing list))
+    (check-eq? 42 (get: (set: alist 'c 'd 'e 42) 'c 'd 'e))))
 
 (comment
  ;; TODO #:associative struct prop
