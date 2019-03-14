@@ -178,4 +178,55 @@
       (check-pred hash-eqv? h))))
 
 
+(comment
+ ;; NOTE basic idea for ht match-expander
+ (match (dict->list (ht ('a 1) ('b 2)))
+   ((hash-table ('b v)) v)
+   ((list-no-order (cons 'b vb) (cons 'a va) _ ...) (list va vb)))
+ ;; comment
+ )
+
+
+(begin-for-syntax
+  (define-syntax-class ht
+    (pattern ((~datum quote) var:id) #:with key this-syntax)
+    (pattern (key var))
+    (pattern var:id #:with key (datum->syntax #'var `',(syntax-e #'var)))))
+
+
+;; TODO I'd much rather have this expander be called `ht', alas `ht' is already
+;; bound to our table constructor macro. I wonder if there's a way to have both.
+(define-match-expander kv
+  (syntax-parser
+
+    ;; allow final repeating pattern: (keypat valpat) ...
+    ((_ ht:ht ... (~seq htlast:ht (~literal ...)))
+     #:with ht...    (if (attribute htlast) #'(htlast (... ...)) #'())
+     #:with alist... (if (attribute htlast) #'((cons htlast.key htlast.var) (... ...)) #'())
+     #`(or (hash-table (ht.key ht.var) ... #,@#'ht...)
+           (list-no-order (cons ht.key ht.var) ... #,@#'alist...)))
+
+    ;; only key val patterns
+    ((_ ht:ht ...)
+     #`(or (hash-table (ht.key ht.var) ...)
+           (list-no-order (cons ht.key ht.var) ... _ (... ...))))))
+
+
+(module+ test
+
+  (check equal? '(1 2 3) (match (ht ('a 1) ('b 2) ('c 3))
+                           ((kv a 'b ('c c)) (list a b c))))
+
+  (check equal? '(1 2 3) (match (dict->list (ht ('a 1) ('b 2) ('c 3) ('d 4)))
+                           ((kv a 'b ('c c)) (list a b c))))
+
+  ;; final pat ... should work for hash-tables
+  (check equal? '(1 (2 3)) (match (ht ('a 1) ('b 2) ('c 3))
+                             ((kv 'a ((? symbol?) v) ...) (list a v))))
+
+  ;; ditto for alists
+  (check equal? '(1 (2 3)) (match (dict->list (ht ('a 1) ('b 2) ('c 3)))
+                             ((kv 'a ((? symbol?) v) ...) (list a v)))))
+
+
 ;; TODO maybe #lang prelude with better defaults
