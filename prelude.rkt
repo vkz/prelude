@@ -1,17 +1,73 @@
 #lang racket
 
-(require syntax/parse (for-syntax syntax/parse))
+
+(provide comment
+         example
+         undefined?
+         some?
+         none?
+         or?
+         and?
+         if?
+         when?
+         associative-on-key-missing
+         gen:associative
+         get: set:
+         ht-equality
+         ht-immutable
+         ht hti
+         kv)
+
+
+(require syntax/parse
+         (for-syntax syntax/parse)
+         racket/generic
+         racket/undefined)
+
 
 (define-syntax-rule (comment . any) (void))
 (define-syntax-rule (example . any) (void))
 
 
-(require racket/generic)
-(require racket/undefined)
+(module+ test
+  (require rackunit))
+
+
+(define-syntax-rule (undefined? e)
+  (eq? undefined e))
+
+
+(define-syntax-rule (some? val)
+  ;; should I also treat null as #f?
+  (let ((v val))
+    (if (undefined? v) #f v)))
+
+
+(define (none? val)
+  (not (some? val)))
+
+
+(define-syntax-rule (or? e ...)
+  (or (some? e) ...))
+
+
+(define-syntax-rule (and? e ...)
+  (and (some? e) ...))
+
+
+(define-syntax-rule (if? test then else)
+  (if (some? test) then else))
+
+
+(define-syntax-rule (when? test body ...)
+  (when (some? test) body ...))
+
+
+;; TODO cond?
+;; TODO when-let, if-let
 
 
 (module+ test
-  (require rackunit)
 
   (define v (vector 'a 'b))
   (define h (hash 'a 1 'b v))
@@ -37,6 +93,7 @@
                    (dict?
                     ;; TODO should I return undefined on key missing instead of
                     ;; throwing like dict does?
+                    ;; (define assoc-get dict-ref)
                     (define (assoc-get table key [default (lambda () (error "key not found" key))])
                       (dict-ref table key default))
                     (define (assoc-set table key val)
@@ -47,7 +104,9 @@
                             table))))))
 
 
-;; TODO [#:default thunk] keyword arg that returns default value on key missing
+;; TODO [#:default thunk] keyword arg that returns default value on key missing.
+;; Even better return undefined for get: and have another function get! that
+;; throws on key missing.
 (define (get: table key . keys)
   (unless (associative? table)
     (error "Expected associative"))
@@ -61,6 +120,9 @@
     ((table key val) (assoc-set table key val))
     ((table key next-key . more)
      (assoc-set table key (apply set: (assoc-get table key (associative-on-key-missing)) next-key more)))))
+
+;; TODO rm: or remove: that removes key-value pair where possible. Should remove
+;; in hash-tables and alists, do nothing for structs.
 
 
 (module+ test
@@ -90,6 +152,7 @@
     (check-eq? 42 (get: (set: alist 'c 'd 'e 42) 'c 'd 'e))))
 
 (comment
+
  ;; TODO #:associative struct prop
  (struct foo (v) #:associative)
  ;; =>
@@ -97,6 +160,11 @@
    #:methods gen:associative
    ((define (assoc-get))
     (define (assoc-set))))
+
+ ;; Actually, we should implement gen:dict interface instead, then get: and set:
+ ;; would hopefully just work without my changing any of the gen:associative code
+ ;; and all dict methods would work, too!
+
  ;; comment
  )
 
@@ -203,6 +271,9 @@
     ((_ ht:ht ... (~seq htlast:ht (~literal ...)))
      #:with ht...    (if (attribute htlast) #'(htlast (... ...)) #'())
      #:with alist... (if (attribute htlast) #'((cons htlast.key htlast.var) (... ...)) #'())
+     ;; TODO to stay true to types that implement dict interface this matcher
+     ;; should have another branch to somehow work for vectors but I wonder if
+     ;; that'd be at all useful.
      #`(or (hash-table (ht.key ht.var) ... #,@#'ht...)
            (list-no-order (cons ht.key ht.var) ... #,@#'alist...)))
 
