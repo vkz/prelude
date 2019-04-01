@@ -33,14 +33,13 @@
   (require rackunit))
 
 
-(define-syntax-rule (undefined? e)
+(define (undefined? e)
   (eq? undefined e))
 
 
-(define-syntax-rule (some? val)
+(define (some? val)
   ;; should I also treat null as #f?
-  (let ((v val))
-    (if (undefined? v) #f v)))
+  (if (undefined? val) #f val))
 
 
 (define (none? val)
