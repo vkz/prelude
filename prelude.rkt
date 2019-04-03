@@ -16,7 +16,8 @@
          ht-equality
          ht-immutable
          ht hti
-         kv)
+         kv
+         kv*)
 
 
 (require syntax/parse
@@ -251,6 +252,12 @@
       (check-pred hash-eqv? h))))
 
 
+;; NOTE We extend Racket match with two table patterns kv - strict pattern where
+;; every sub-pattern must match, and kv* - permissive pattern where any missing
+;; keys would simply be bound to undefined. Both support final repeat ... pattern
+;; that would match remaining table entries. Both work for hash-tables and alists.
+
+
 (comment
  ;; NOTE basic idea for ht match-expander
  (match (dict->list (ht ('a 1) ('b 2)))
@@ -262,20 +269,28 @@
 
 (begin-for-syntax
   (define-syntax-class ht
-    (pattern ((~datum quote) var:id) #:with key this-syntax)
-    (pattern (key var))
-    (pattern var:id #:with key (datum->syntax #'var `',(syntax-e #'var)))))
+    (pattern ((~datum quote) var:id) #:with key this-syntax #:attr ignore #f)
+    (pattern (key var) #:attr ignore #f)
+    (pattern (~literal _) #:with key #f #:with var #f #:attr ignore #t)
+    (pattern var:id #:with key (datum->syntax #'var `',(syntax-e #'var)) #:attr ignore #t)))
 
 
 ;; TODO I'd much rather have this expander be called `ht', alas `ht' is already
 ;; bound to our table constructor macro. I wonder if there's a way to have both.
+
+
+;; strict kv pattern
 (define-match-expander kv
   (syntax-parser
 
     ;; allow final repeating pattern: (keypat valpat) ...
     ((_ ht:ht ... (~seq htlast:ht (~literal ...)))
      #:with ht...    (if (attribute htlast) #'(htlast (... ...)) #'())
-     #:with alist... (if (attribute htlast) #'((cons htlast.key htlast.var) (... ...)) #'())
+     #:with alist... (if (attribute htlast)
+                         (if (attribute htlast.ignore)
+                             #'(htlast (... ...))
+                             #'((cons htlast.key htlast.var) (... ...)))
+                         #'())
      ;; TODO to stay true to types that implement dict interface this matcher
      ;; should have another branch to somehow work for vectors but I wonder if
      ;; that'd be at all useful.
@@ -290,19 +305,107 @@
 
 (module+ test
 
+  ;; hash-tables
   (check equal? '(1 2 3) (match (ht ('a 1) ('b 2) ('c 3))
                            ((kv a 'b ('c c)) (list a b c))))
 
-  (check equal? '(1 2 3) (match (dict->list (ht ('a 1) ('b 2) ('c 3) ('d 4)))
-                           ((kv a 'b ('c c)) (list a b c))))
-
-  ;; final pat ... should work for hash-tables
   (check equal? '(1 (2 3)) (match (ht ('a 1) ('b 2) ('c 3))
                              ((kv 'a ((? symbol?) v) ...) (list a v))))
 
-  ;; ditto for alists
+  (check equal? '(1) (match (ht ('a 1) ('b 2) ('c 3))
+                             ((kv 'a _ ...) (list a))))
+
+  ;; alists
+  (check equal? '(1 2 3) (match (dict->list (ht ('a 1) ('b 2) ('c 3) ('d 4)))
+                           ((kv a 'b ('c c)) (list a b c))))
+
+
   (check equal? '(1 (2 3)) (match (dict->list (ht ('a 1) ('b 2) ('c 3)))
-                             ((kv 'a ((? symbol?) v) ...) (list a v)))))
+                             ((kv 'a ((? symbol?) v) ...) (list a v))))
+
+  (check equal? '(1) (match (dict->list (ht ('a 1) ('b 2) ('c 3)))
+                       ((kv 'a _ ...) (list a)))))
+
+
+(define (immutable-or-alist? t)
+  (or (immutable? t) (alist? t)))
+
+
+;; permissive kv* pattern
+(define-match-expander kv*
+  (syntax-parser
+
+    ;; allow final repeating pattern: (keypat valpat) ...
+    ((_ ht:ht ... (~seq htlast:ht (~literal ...)))
+     #:with ht...    (if (attribute htlast) #'(htlast (... ...)) #'())
+     #:with alist... (if (attribute htlast)
+                         (if (attribute htlast.ignore)
+                             #'(htlast (... ...))
+                             #'((cons htlast.key htlast.var) (... ...)))
+                         #'())
+
+     ;; NOTE idea: => (app λ (list var ...) (kv-pat with final repeat pat only))
+     ;; Where λ basically removes every key that appears as pattern from the
+     ;; table, so that we can match the final repeat pattern against that trimmed
+     ;; table. Ugly and expensive but it works.
+     #`(app
+        ;; transformer
+        (λ (t)
+          (define-values (t* remove)
+            (if (immutable-or-alist? t)
+                (values t dict-remove)
+                (values (dict-copy t) (λ (t key) (dict-remove! t key) t))))
+          ;; NOTE with mutable hash-tables the set! step is unnecessary so we
+          ;; could just write (remove t* ht.key) ... and for that case it'd make
+          ;; computation cheaper, but I don't want more branching here - this code
+          ;; is painful enough.
+          (set! t* (remove t* ht.key))
+          ...
+          (values (list (get: t ht.key) ...) t*))
+        ;; patterns
+        (list ht.var ...)
+        (or (hash-table #,@#'ht...)
+            (list-no-order #,@#'alist...))))
+
+    ;; NOTE idea: => (app λ (list var ...)) where λ simply looks up every key in
+    ;; the table with get:, accumulates results in a list to be matched
+    ((_ ht:ht ...)
+     #`(app (λ (t) (list (get: t ht.key) ...)) (list ht.var ...)))))
+
+
+(module+ test
+
+  ;; hash-tables
+  (check equal? (list 1 2 undefined) (match (ht ('a 1) ('b 2))
+                                       ((kv* a b c) (list a b c))))
+
+  (check equal? (list 1 2 undefined (set 4 5))
+         (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
+           ((kv* a b c ((? symbol?) v) ...) (list a b c (list->set v)))))
+
+  (check equal? (list 1 2 undefined (set '(e . 5) '(d . 4)))
+         (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
+           ((kv* a b c (k v) ...) (list a b c (list->set (map cons k v))))))
+
+  (check equal? (list 1 2 undefined)
+         (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
+           ((kv* a b c _ ...) (list a b c))))
+
+  ;; alists
+  (check equal? (list 1 2 undefined) (match (dict->list (ht ('a 1) ('b 2)))
+                                       ((kv* a b c) (list a b c))))
+
+  (check equal? (list 1 2 undefined (set 4 5))
+         (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
+           ((kv* a b c ((? symbol?) v) ...) (list a b c (list->set v)))))
+
+  (check equal? (list 1 2 undefined (set '(e . 5) '(d . 4)))
+         (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
+           ((kv* a b c (k v) ...) (list a b c (list->set (map cons k v))))))
+
+  (check equal? (list 1 2 undefined)
+         (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
+           ((kv* a b c _ ...) (list a b c)))))
 
 
 ;; TODO maybe #lang prelude with better defaults
