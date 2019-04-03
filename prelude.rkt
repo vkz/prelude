@@ -103,15 +103,12 @@
                             table))))))
 
 
-;; TODO [#:default thunk] keyword arg that returns default value on key missing.
-;; Even better return undefined for get: and have another function get! that
-;; throws on key missing.
-(define (get: table key . keys)
+(define (get: #:default [default (thunk undefined)] table key . keys)
   (unless (associative? table)
     (error "Expected associative"))
   (if (empty? keys)
-      (assoc-get table key)
-      (apply get: (assoc-get table key) keys)))
+      (assoc-get table key default)
+      (keyword-apply get: '(#:default) (list default) (assoc-get table key) keys)))
 
 
 (define set:
@@ -122,7 +119,6 @@
 
 ;; TODO rm: or remove: that removes key-value pair where possible. Should remove
 ;; in hash-tables and alists, do nothing for structs.
-
 
 (module+ test
 
@@ -148,7 +144,17 @@
   (check-eq? 42 (get: (set: alist 'c 'd 'e 42) 'c 'd 'e))
   ;; yep, we can totally make nested alists
   (parameterize ((associative-on-key-missing list))
-    (check-eq? 42 (get: (set: alist 'c 'd 'e 42) 'c 'd 'e))))
+    (check-eq? 42 (get: (set: alist 'c 'd 'e 42) 'c 'd 'e)))
+
+  ;; missing keys
+
+  ;; default missing to undefined
+  (check eq? undefined (get: (ht) 'a))
+  (check eq? undefined (get: (ht ('a (ht))) 'a 'b))
+
+  ;; allow custom missing key action
+  (check-exn exn:fail? (thunk (get: (ht) 'a #:default (thunk (error "not found")))))
+  (check-exn exn:fail? (thunk (get: (ht ('a (ht))) 'a 'b #:default (thunk (error "not found"))))))
 
 (comment
 
