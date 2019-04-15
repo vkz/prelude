@@ -24,9 +24,14 @@
          (hash-ref (lua-table dict) key)
          (if (lua-meta-table dict)
              (let ((index (dict-ref (lua-meta-table dict) '__index)))
-               (if (lua? index)
-                   (index key)
-                   (index dict key)))
+               (cond ((lua? index)
+                      (dict-ref index key))
+
+                     ((procedure? index)
+                      ;; TODO signal arity error if incorrect
+                      (index dict key))
+
+                     (else undefined)))
              ;; no such key => undefined
              undefined)))
 
@@ -58,11 +63,17 @@
              ;; when key absent try __newindex metamethod first else set the key
              (if (lua-meta-table dict)
                  (let ((newindex (dict-ref (lua-meta-table dict) '__newindex)))
-                   (if (lua? newindex)
-                       ;; __newindex is a table then set the key there
-                       (dict-set! newindex key v)
-                       ;; else assume __newindex is a function to be called
-                       (newindex dict key v)))
+                   (cond ((lua? newindex)
+                          ;; TODO __newindex is a table then set the key there, but
+                          ;; is that reasonable?
+                          (dict-set! newindex key v))
+
+                         ((procedure? newindex)
+                          ;; TODO signal arity error if incorrect
+                          (void (newindex dict key v)))
+
+                         (else
+                          (void (set: (lua-table dict) key v)))))
                  ;; no meta-table so we simply set the key to value
                  (super-dict-set! (lua-table dict) key v)))))
 
@@ -93,13 +104,14 @@
                   (list k v)))))))
 
 
+(define table? lua?)
+
+
 (define-syntax-rule (table arg ...)
   (lua (ht arg ...) undefined))
 
 
 (define (set-meta-table! t mt)
-  (unless (dict-has-key? mt '__index)
-    (dict-set! mt '__index (table)))
   (set-lua-meta-table! t mt)
   t)
 
