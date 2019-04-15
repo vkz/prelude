@@ -6,7 +6,8 @@
 
 
 (module+ test
-  (require rackunit))
+  (require rackunit)
+  (require prelude/testing))
 
 
 ;; TODO we must hide all lua struct fields, getters and setters - anything that
@@ -122,14 +123,21 @@
 
 (module+ test
 
-  (define t (table ('a 1) ('b 2)))
+  (define/checked t (table ('a 1) ('b 2)))
 
   (check eq? 1 (t 'a))
   (check eq? 2 (t 'b))
+  (check eq? 1 (get: t 'a))
+  (check eq? 2 (get: t 'b))
   (check-pred undefined? (t 'c))
 
   (dict-set! t 'c 42)
   (check eq? 42 (t 'c))
+
+  (dict-remove! t 'c)
+  (check-false (dict-has-key? t 'c))
+
+  (check-eq? 42 (get: (set: t 'c 42) 'c))
 
   ;; we can remove a key entry either with dict-remove! or by setting it to
   ;; undefined. We thus ensure that undefined could never appear as a value.
@@ -145,7 +153,7 @@
   (check eq? 1 (t 'a))
   (check eq? 42 (t 'c))
 
-  (define proxy-table (table))
+  (define/checked proxy-table (table))
   (void
    (set-meta-table! t (table ('__newindex proxy-table)))
    (lua-meta-table t)
@@ -163,12 +171,105 @@
    ;; comment
    ))
 
+
+(module+ test
+
+  (define/checked Account
+    (table ('balance 0)
+           ('withdraw (λ (self v) (set: self 'balance (- (get: self 'balance) v)) self))
+           ('deposit  (λ (self v) (set: self 'balance (+ (get: self 'balance) v)) self))
+           ('new (λ (self [o (table)])
+                   (set: self '__index self)
+                   (set-meta-table! o self)
+                   o))))
+
+  (test-case "invoke simple methods"
+
+    ;; initial balance
+    (check-eq? 0 (get: Account 'balance))
+
+    ;; deposit
+    (void ((get: Account 'deposit) Account 100))
+    (check-eq? 100 (get: Account 'balance))
+
+    ;; withdraw
+    (void ((get: Account 'withdraw) Account 100))
+    (check-eq? 0 (get: Account 'balance)))
+
+  (define/checked LimitedAccount ((get: Account 'new) Account))
+  (check-true (table? LimitedAccount))
+
+  (define/checked s ((get: LimitedAccount 'new) LimitedAccount (table ('limit 1000))))
+
+  (test-case "inherit from another table (class)"
+
+    (check-eq? (get: s 'limit) 1000)
+    (check-eq? (get: s 'balance) 0)
+
+    (void ((get: s 'deposit) s 100))
+    (check-eq? (get: s 'balance) 100)
+
+    ;; withdraw
+    (void ((get: s 'withdraw) s 100))
+    (check-eq? (get: s 'balance) 0)
+
+    (void (set: LimitedAccount 'get-limit (λ (self) (or (get: self 'limit) 0))))
+    (check-eq? ((get: s 'get-limit) s) 1000))
+
+
+  (test-case "override inherited method"
+
+    ;; override withdraw method
+    (void (set: LimitedAccount 'withdraw
+                (λ (self v)
+                  (if (> (- v (get: self 'balance)) ((get: self 'get-limit) self))
+                      (error "insufficient funds")
+                      (set: self 'balance (- (get: self 'balance) v)))
+                  self)))
+
+    (check-exn exn? (thunk ((get: s 'withdraw) s 1100)) "insufficient funds")
+    (check-eq? (begin ((get: s 'withdraw) s 500) (get: s 'balance)) -500))
+
+  (test-case "extend inheritance chain"
+
+    (define/checked OverdraftAccount ((get: LimitedAccount 'new) LimitedAccount (table ('fee 5))))
+    (check-true (table? OverdraftAccount))
+
+    (define/checked d ((get: OverdraftAccount 'new) OverdraftAccount))
+    (check-eq? (get: d 'fee) 5)
+
+    (void (set: OverdraftAccount 'withdraw
+                (λ (self v)
+                  ;; TODO we should probably have a way to delegate to proto methods
+                  ;; delegate to LimitedAccount.withdraw
+                  ((get: (lua-meta-table (lua-meta-table self)) 'withdraw) self (+ (get: self 'fee) v)))))
+
+    (check-eq? (get: d 'withdraw) (get: OverdraftAccount 'withdraw))
+    (check-eq? (get: d 'withdraw) (get: (lua-meta-table d) 'withdraw))
+
+    (check-exn exn? (thunk ((get: d 'withdraw) d 10)) "insufficient funds")
+    (check-eq? (get: d 'balance) 0)
+
+    (void (set: d 'limit 100))
+    (void (checked ((get: d 'withdraw) d 10)))
+    (check-eq? (get: d 'balance) -15)))
+
+
 ;;* Notes -------------------------------------------------------- *;;
 
 
 ;; TODO Milestone 1: all examples in Lua book Ch20 and Ch21 must work correctly.
 ;; TODO Milestone 2: #lang racket/tables should expose fancy {} syntax
 ;; TODO Milestone 3: FastCGI in #lang racket/tables
+
+
+;; TODO table as function should act like sending corresponding message to that
+;; table:
+;;
+;; (table 'key . args) => ((get: table 'key) table . args)
+;; (table proc . args) => (proc table . args)
+;;   this one is tricky though and diverges, treat key-table specially?
+;; (table key-table . args) => (key-table table . args) => repeat inf
 
 
 ;; TODO {} constructor syntax e.g. {(key1 val1) (key2 val2)}. Maybe also support
