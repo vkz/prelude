@@ -277,6 +277,9 @@
 
 ;; TODO I'd much rather have this expander be called `ht', alas `ht' is already
 ;; bound to our table constructor macro. I wonder if there's a way to have both.
+;; IMO there must be a way around it e.g. see define/match* example. More
+;; generally appears that at least structs manage to bind both their constructor
+;; and match transformer with the same name.
 
 
 ;; strict kv pattern

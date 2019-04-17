@@ -2,7 +2,15 @@
 
 
 (require racket/struct
-         racket/generic)
+         racket/generic
+         (for-syntax syntax/parse
+                     racket/match))
+
+
+;;* Provides -------------------------------------------------------- *;;
+
+
+(provide table table? set-meta-table! rawset! app top)
 
 
 (module+ test
@@ -13,6 +21,11 @@
 ;; TODO we must hide all lua struct fields, getters and setters - anything that
 ;; may hint to the user of prelude that tables aren't just values but structs.
 ;; IIUC struct and provide have necessary facilities, just need to use em.
+
+
+;;* Lua tables ------------------------------------------------------ *;;
+
+
 (struct lua (table meta-table) #:mutable
 
   #:property prop:procedure dict-ref
@@ -172,6 +185,9 @@
    ))
 
 
+;;* Inheritance ----------------------------------------------------- *;;
+
+
 (module+ test
 
   (define/checked Account
@@ -255,11 +271,93 @@
     (check-eq? (get: d 'balance) -15)))
 
 
+;;* Lang ------------------------------------------------------------ *;;
+
+
+(begin-for-syntax
+
+  (define (table-colon-key? id)
+    (match (symbol->string (syntax->datum id))
+      ((regexp #rx"^(.+)\\:(.+)$" (list _ table key))
+       (list (datum->syntax id (string->symbol table))
+             (datum->syntax id (string->symbol key))))
+
+      (else #f)))
+
+  (define (table-dot-key? id)
+    (match (symbol->string (syntax->datum id))
+      ((regexp #rx"^(.+)\\.(.+)$" (list _ table key))
+       (list
+        (datum->syntax id (string->symbol table))
+        (datum->syntax id (string->symbol key))))
+
+      (else #f)))
+
+  (define-syntax-class tck
+    (pattern id:id
+             #:when (table-colon-key? #'id)
+             #:do [(match-define (list table key) (table-colon-key? #'id))]
+             #:with table table
+             #:with key key))
+
+  (define-syntax-class tdk
+    (pattern id:id
+             #:when (table-dot-key? #'id)
+             #:do [(match-define (list table key) (table-dot-key? #'id))]
+             #:with table table
+             #:with key key)))
+
+
+;;** - #%app -------------------------------------------------------- *;;
+
+
+(define-syntax (app stx)
+  (syntax-parse stx
+
+    ;; TODO check for correct syntax inside e
+    ((_ e:expr ...)
+     #:when (eq? #\{ (syntax-property stx 'paren-shape))
+     #'(table e ...))
+
+    ((_ f e ...)
+     #'(#%app f e ...))))
+
+
+;;** - #%top -------------------------------------------------------- *;;
+
+
+(define-syntax (top stx)
+  (syntax-parse stx
+
+    ((_ . id:tdk) #'(get: id.table 'id.key))
+    ;; TODO is it even reasonable to expand table:method in id position into a
+    ;; curried function? First, we're being presumptuous, two, error gets reported
+    ;; immediately rather than at the call site (maybe its good though).
+    ((_ . id:tck) (syntax/loc stx
+                    (let ((proc (get: id.table 'id.key)))
+                      (unless (and (procedure? proc)
+                                   (arity-includes?
+                                    (procedure-arity (λ (_ . rest) _))
+                                    (procedure-arity proc)))
+                        (raise-result-error 'id "procedure of at least 1 argument" proc))
+                      (curry (get: id.table 'id.key) id.table))))
+
+    ((_ . id:id) #'(#%top . id))
+
+    (_ (raise-syntax-error '#%top "invalid syntax in top"))))
+
+
+(module+ test
+  ;; TODO this feels icky. Is there a way to test prelude/tables language yet
+  ;; avoid circular dependency?
+  (define run-table-syntax-tests (dynamic-require "tests/test-table-syntax.rkt" 'run-tests))
+  (run-table-syntax-tests))
+
+
 ;;* Notes -------------------------------------------------------- *;;
 
 
 ;; TODO Milestone 1: all examples in Lua book Ch20 and Ch21 must work correctly.
-;; TODO Milestone 2: #lang racket/tables should expose fancy {} syntax
 ;; TODO Milestone 3: FastCGI in #lang racket/tables
 
 
@@ -272,16 +370,7 @@
 ;; (table key-table . args) => (key-table table . args) => repeat inf
 
 
-;; TODO {} constructor syntax e.g. {(key1 val1) (key2 val2)}. Maybe also support
-;; extended "class" syntax {Class #:kw1 opt1 #:kw2 opt2 (k1 v1) (k2 v2)} where
-;; Class is the meta-table to use and keyword options control behavior say
-;; table immutability, concurrency behavior etc. We could also control
-;;
-;; simple constructor
-;;   {('a 1)
-;;    ('b 2)}
-;;
-;; extended constructor
+;; TODO extended constructor
 ;;   {foo #:kw1 option
 ;;        #:kw2 option
 ;;        ('a 1)
@@ -296,13 +385,6 @@
 ;;   (define (table:fun arg) (list self 42))
 ;;
 ;; For any other key type simply use (set: obj field value)
-
-
-;; TODO Access patterns for 'symbol keys:
-;;   obj.field   (obj.method arg ...)
-;;   obj:field   (obj:method self arg ...)
-;;
-;; For any other key simply use (get: obj field)
 
 
 ;; TODO Table must have identity a-la struct, so you could (a) predicate test for
