@@ -1,6 +1,10 @@
 #lang prelude/tables
 
-(require prelude/testing)
+(require prelude/testing
+         syntax/macro-testing)
+
+(provide run-tests
+         run-define/table-tests)
 
 (define (run-tests)
 
@@ -16,6 +20,28 @@
 
   (check-exn exn:fail:contract? (thunk (list 1 t:d 2)) "procedure of at least 1 argument")
 
-  (displayln "test-table-syntax ... done"))
+  (displayln "test-table-syntax: run-tests ... done"))
 
-(provide run-tests)
+
+(module+ test
+  (run-tests))
+
+
+(define (run-define/table-tests)
+  (define/checked tbl {})
+  (void (checked (define/table tbl.key 42)))
+  (void (checked (define/table (tbl.f arg) (+ 1 arg))))
+  (void (checked (define/table (tbl:meth key) self.key)))
+  (check-eq? (tbl.f 42) 43)
+  (check-eq? (tbl:meth 'key) 42)
+
+  ;; NOTE unbound identifier is a compile time error that we can't just merily
+  ;; catch at runtime
+  (check-exn exn? (thunk (convert-compile-time-error
+                          (define/table undefined-t.foo 42))))
+
+  (displayln "test-table-syntax: run-define/table-tests ... done"))
+
+
+(module+ test
+  (run-define/table-tests))

@@ -10,7 +10,8 @@
 ;;* Provides -------------------------------------------------------- *;;
 
 
-(provide table table? set-meta-table! rawset! app top)
+(provide table table? set-meta-table! rawset! app top
+         define/table)
 
 
 (module+ test
@@ -271,7 +272,7 @@
     (check-eq? (get: d 'balance) -15)))
 
 
-;;* Lang ------------------------------------------------------------ *;;
+;;* Syntax ---------------------------------------------------------- *;;
 
 
 (begin-for-syntax
@@ -279,8 +280,8 @@
   (define (table-colon-key? id)
     (match (symbol->string (syntax->datum id))
       ((regexp #rx"^(.+)\\:(.+)$" (list _ table key))
-       (list (datum->syntax id (string->symbol table))
-             (datum->syntax id (string->symbol key))))
+       (list (datum->syntax id (string->symbol table) id)
+             (datum->syntax id (string->symbol key) id)))
 
       (else #f)))
 
@@ -288,8 +289,8 @@
     (match (symbol->string (syntax->datum id))
       ((regexp #rx"^(.+)\\.(.+)$" (list _ table key))
        (list
-        (datum->syntax id (string->symbol table))
-        (datum->syntax id (string->symbol key))))
+        (datum->syntax id (string->symbol table) id)
+        (datum->syntax id (string->symbol key) id)))
 
       (else #f)))
 
@@ -335,6 +336,8 @@
     ;; immediately rather than at the call site (maybe its good though).
     ((_ . id:tck) (syntax/loc stx
                     (let ((proc (get: id.table 'id.key)))
+                      ;; TODO wait, would that check work for structs with
+                      ;; proc:prop?
                       (unless (and (procedure? proc)
                                    (arity-includes?
                                     (procedure-arity (λ (_ . rest) _))
@@ -348,10 +351,72 @@
 
 
 (module+ test
-  ;; TODO this feels icky. Is there a way to test prelude/tables language yet
-  ;; avoid circular dependency?
-  (define run-table-syntax-tests (dynamic-require "tests/test-table-syntax.rkt" 'run-tests))
+  (define run-table-syntax-tests
+    (dynamic-require "tests/test-table-syntax.rkt" 'run-tests))
   (run-table-syntax-tests))
+
+
+;;** - define/table ------------------------------------------------- *;;
+
+
+(define-syntax (define/table stx)
+  (syntax-parse stx
+
+    ;; TODO maybe guard these with (let ((t id.table)) (unless (table? t) error)),
+    ;; or maybe even better if t is unbound, bind it to a fresh table! I wonder if
+    ;; testing for bound is even possible? Worst case we could handle exn.
+
+    ((_ id:tdk e:expr)
+     ;; (define/table table.key val)
+     #'(set: id.table 'id.key e))
+
+    ((_ id:tck e:expr)
+     ;; (define/table table:method proc)
+     (syntax/loc stx
+       (begin
+         (define table:method e)
+         (unless (and (procedure? table:method)
+                      (arity-includes?
+                       (procedure-arity (λ (_ . rest) _))
+                       (procedure-arity table:method)))
+           (raise-result-error 'id "procedure of at least 1 argument" table:method))
+         (set: id.table 'id.key table:method))))
+
+    ((_ (id:tdk arg ...) body:expr ...)
+     ;; (define/table (table.key . args) body)
+     (syntax/loc stx
+       (begin
+         (define (table.method arg ...) body ...)
+         (set: id.table 'id.key table.method))))
+
+    ((_ (id:tck arg ...) body:expr ...)
+     ;; (define/table (table:method . args) body)
+     #:with self (datum->syntax (car (syntax-e #'(body ...))) 'self)
+     ;; TODO confirm self has the right scope and can be used in the body
+     (syntax/loc stx
+       (begin
+         (define (table:method self arg ...) body ...)
+         (set: id.table 'id.key table:method))))))
+
+
+(module+ test
+
+  (define/checked tbl (table))
+  (void (checked (define/table tbl.key 42)))
+  (void (checked (define/table (tbl.f arg) (+ 1 arg))))
+  (void (checked (define/table (tbl:meth key) (get: self key))))
+  (check-eq? ((get: tbl 'f) 42) 43)
+  (check-eq? ((get: tbl 'meth) tbl 'key) 42)
+
+  ;; NOTE unbound identifier is a compile time error that we can't just merily
+  ;; catch at runtime
+  (require syntax/macro-testing)
+  (check-exn exn? (thunk (convert-compile-time-error
+                          (define/table undefined-t.foo 42))))
+
+  (define run-define/table-tests
+    (dynamic-require "tests/test-table-syntax.rkt" 'run-define/table-tests))
+  (run-define/table-tests))
 
 
 ;;* Notes -------------------------------------------------------- *;;
@@ -375,16 +440,6 @@
 ;;        #:kw2 option
 ;;        ('a 1)
 ;;        ('b 2)}
-
-
-;; TODO Define patterns for 'symbol keys:
-;;   (define table.foo 42)
-;;   (set! table.foo 42)
-;;   (set: table.foo 42)
-;;   (define (table.fun arg) 42)
-;;   (define (table:fun arg) (list self 42))
-;;
-;; For any other key type simply use (set: obj field value)
 
 
 ;; TODO Table must have identity a-la struct, so you could (a) predicate test for
