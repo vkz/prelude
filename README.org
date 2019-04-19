@@ -1,5 +1,72 @@
 * Racket questions
 
+** bind an unbound id in a macro
+
+[[https://groups.google.com/forum/#!topic/racket-users/ztrOjIIxSjs][Asked on list]]
+
+*** Problem
+
+Here's what I've been trying and failing to do in Racket. The smallest example I
+could think of is a macro that sets a key in a hash-table, so basically this
+transformation:
+
+#+begin_src racket
+  (set/define ht 'key 42)
+  ;; =>
+  (hash-set! ht 'key 42)
+#+end_src
+
+but if ht there is an unbound identifier it must bind it to a fresh hash table. So
+basically introduce a (define ht (make-hash)) before setting the key. Assume we
+run in a context where define is allowed.
+
+Please, don't ask why I want something like this, I just do. So far tricks I could
+use in other lisps failed in Racket. Here's one silly idea: catch unbound
+identifier exn. You can do it as per below or in the handler itself but it doesn't
+matter cause that define is local (I think) and doesn't happen in the macro use
+context.
+
+#+begin_src racket
+
+  (require (only-in syntax/macro-testing convert-compile-time-error))
+
+  (define (unbound-id-error? err)
+    (and (exn:fail:syntax? err)
+         (regexp-match #rx"unbound identifier" (exn-message err))))
+
+  (define-syntax-rule (set/define id key val)
+    (unless (let/ec k
+              (with-handlers ((unbound-id-error? (λ (_) (k #f))))
+                (convert-compile-time-error
+                 (hash-set! id key val))))
+      (displayln "escaped")
+      (define id (make-hash))
+      (hash-set! id key val)))
+
+  (set/define ht 'key 42)
+  ;; =>
+  ;; runs but appears that the (define ht ..) doesn't happen at top-level
+
+#+end_src
+
+This is already all sorts of ugly and it doesn't even work.
+
+Another idea is to replace #%top for the extent of that transformer, perform
+local-expand (or some equivalent) so that #%top expansion does the job. I've no
+idea how to do that, but I'm sure Racket could be persuaded. Incidentally, I'm
+curious how to create such local transformers e.g. something like (let-transformer
+((#%top ...)) body).
+
+Even if I knew how to do the above (local-expand #'(set/define ht 'key 42) '())
+run at compile time doesn't seem to wrap unbound ht in #%top. I thought it should?
+
+So then, two questions:
+
+1. What's the Racket way of getting what I want?
+
+2. Is there a way to torture the above code into submission? Put differently is
+   there a way to ensure (define id (make-hash)) runs in appropriate context? 
+
 ** cycle in loading
 
 [[https://groups.google.com/forum/#!topic/racket-users/DKfWFGJVckU][Asked on the list]]

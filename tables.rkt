@@ -368,7 +368,7 @@
 
     ((_ id:tdk e:expr)
      ;; (define/table table.key val)
-     #'(set: id.table 'id.key e))
+     (syntax/loc stx (set: id.table 'id.key e)))
 
     ((_ id:tck e:expr)
      ;; (define/table table:method proc)
