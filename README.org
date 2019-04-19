@@ -1,0 +1,109 @@
+* Racket questions
+
+** cycle in loading
+
+[[https://groups.google.com/forum/#!topic/racket-users/DKfWFGJVckU][Asked on the list]]
+
+*** Problem
+
+I wrote a library foo/bar.rkt and I also allow to use it as a #lang. Roughly the
+structure is like this:
+
+foo
+├── bar
+│   ├── lang
+│   │   └── reader.rkt
+│   └── main.rkt
+├── bar.rkt
+
+Most of the work happens in the library foo/bar.rkt, so naturally all of the tests
+reside there. I'd like to be able to test library proper, but also use the syntax
+of the language that I defined for it, so I try something like this and get a ...
+cycle? Sadly, I can't figure out why. Could you please help me reason through
+this.
+
+#+begin_src racket
+  ;; foo/bar.rkt
+  ;; -----------
+  ;; bulk of foo/bar language semantics is here, but we also want to allow
+  ;; requiring it as a library, hence this file and module indirection
+  (module+ test
+
+    (module lang-test foo/bar
+      (provide run-language-tests)
+      (define (run-language-tests) 42))
+
+    (define run (dynamic-require 'lang-test 'run-language-tests))
+    (run))
+
+  ;; => error
+  ;
+  ; standard-module-name-resolver: cycle in loading
+  ;   at path: /Users/russki/Code/foo/bar.rkt
+  ;   paths:
+  ;    /Users/russki/Code/prelude/bar.rkt
+
+#+end_src
+
+Far as I can tell cycle isn't due to dynamic-require there, but due to that
+submodule declaration. This puzzles me, since the submod is declared with module,
+not module+ or module*.
+
+Other modules look as you'd probably expect:
+
+#+begin_src racket
+  ;; foo/bar/lang/reader.rkt
+  ;; -----------------------
+  #lang s-exp syntax/module-reader
+  foo/bar/main
+
+  ;; foo/bar/main.rkt
+  ;; ----------------
+  #lang racket
+  (require foo
+           "../bar.rkt")
+
+  (provide (except-out (all-from-out foo) #%app #%top)
+           (rename-out [app #%app]
+                       [top #%top])
+           (except-out (all-from-out "../bar.rkt") app top))
+#+end_src
+
+
+Now, if we move the lang tests into a separate file, the dynamic-require above
+works out and no cycles are reported:
+
+#+begin_src racket
+;; foo/lang-test.rkt
+;; -----------------
+#lang foo/bar
+(provide run-language-tests)
+(define (run-language-tests) 42)
+#+end_src
+
+One hypothesis I have is that the (module lang-test foo/bar ...) doesn't resolve
+to the language but rather to the foo/bar.rkt. There must be a way to reflect how
+resolver works, but the closest I found was this:
+
+#+begin_src racket
+(require syntax/modresolve)
+(resolve-module-path 'foo/bar)
+#+end_src
+
+And indeed it resolves to foo/bar.rkt, but then I don't know if I'm even using it
+correctly.
+
+I may actually be doing something stupid here e.g. introducing ambiguity as to how
+foo/bar is resolved (lang or lib) but this silliness brings about some things I'd
+like to clarify and learn:
+
+1. How would you write your tests in the situation like this when most of the work
+   happens in the library but you also allow using it as #lang? I'd like to keep
+   both kinds of tests local to the library, so I can run them as code. Or at
+   least be able to run tests that only test the lib and corresponding language.
+
+2. Why does the above report a cycle? How do I reason about it, better still how
+   do I query the resolver, reflect and debug?
+
+
+Have I missed some important part in the docs about this?
