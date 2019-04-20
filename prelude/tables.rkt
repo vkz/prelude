@@ -352,7 +352,7 @@
 
 (module+ test
   (define run-table-syntax-tests
-    (dynamic-require "tests/test-table-syntax.rkt" 'run-tests))
+    (dynamic-require 'prelude-tests/test-table-syntax 'run-tests))
   (run-table-syntax-tests))
 
 
@@ -415,7 +415,7 @@
                           (define/table undefined-t.foo 42))))
 
   (define run-define/table-tests
-    (dynamic-require "tests/test-table-syntax.rkt" 'run-define/table-tests))
+    (dynamic-require 'prelude-tests/test-table-syntax 'run-define/table-tests))
   (run-define/table-tests))
 
 

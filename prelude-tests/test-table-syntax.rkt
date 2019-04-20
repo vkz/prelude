@@ -18,9 +18,7 @@
 
   (check-eq? (t:c 'b) 2)
 
-  (check-exn exn:fail:contract? (thunk (list 1 t:d 2)) "procedure of at least 1 argument")
-
-  (displayln "test-table-syntax: run-tests ... done"))
+  (check-exn exn:fail:contract? (thunk (list 1 t:d 2)) "procedure of at least 1 argument"))
 
 
 (module+ test
@@ -38,9 +36,7 @@
   ;; NOTE unbound identifier is a compile time error that we can't just merily
   ;; catch at runtime
   (check-exn exn? (thunk (convert-compile-time-error
-                          (define/table undefined-t.foo 42))))
-
-  (displayln "test-table-syntax: run-define/table-tests ... done"))
+                          (define/table undefined-t.foo 42)))))
 
 
 (module+ test
