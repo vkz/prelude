@@ -419,6 +419,13 @@
   (run-define/table-tests))
 
 
+;;* Reader ------------------------------------------------------- *;;
+
+
+(module reader syntax/module-reader
+  prelude/tables-lang)
+
+
 ;;* Notes -------------------------------------------------------- *;;
 
 

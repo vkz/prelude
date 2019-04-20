@@ -410,5 +410,3 @@
          (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
            ((kv* a b c _ ...) (list a b c)))))
 
-
-;; TODO maybe #lang prelude with better defaults
