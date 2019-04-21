@@ -387,7 +387,12 @@
 
     ((_ id:tdk e:expr)
      ;; (define/table table.key val)
-     (syntax/loc stx (set: id.table 'id.key e)))
+     (syntax/loc stx
+       (begin
+         ;; NOTE we introduce define here to ensure that
+         ;; define/table is used where define is allowed
+         (define table.key e)
+         (set: id.table 'id.key table.key))))
 
     ((_ id:tck e:expr)
      ;; (define/table table:method proc)
