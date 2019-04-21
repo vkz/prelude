@@ -30,8 +30,15 @@
   (void (checked (define/table tbl.key 42)))
   (void (checked (define/table (tbl.f arg) (+ 1 arg))))
   (void (checked (define/table (tbl:meth key) self.key)))
+  ;; method of arity 1, i.e. takes only self
+  (void (checked (define/table (tbl:meth0) self.key)))
+  (check-eq? tbl.key 42)
   (check-eq? (tbl.f 42) 43)
   (check-eq? (tbl:meth 'key) 42)
+  ;; arity 1 method in application position
+  (check-eq? (tbl:meth0) 42)
+  ;; arity 1 in identifier position
+  (check-eq? (let ((method tbl:meth0)) (method)) 42)
 
   ;; NOTE unbound identifier is a compile time error that we can't just merily
   ;; catch at runtime

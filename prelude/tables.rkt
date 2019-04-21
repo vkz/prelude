@@ -343,10 +343,21 @@
 (define-syntax (top stx)
   (syntax-parse stx
 
-    ((_ . id:tdk) #'(get: id.table 'id.key))
-    ;; TODO is it even reasonable to expand table:method in id position into a
-    ;; curried function? First, we're being presumptuous, two, error gets reported
-    ;; immediately rather than at the call site (maybe its good though).
+    ((_ . id:tdk) (syntax/loc stx (get: id.table 'id.key)))
+
+    ;; NOTE this clause runs every time table:method appears in code, whether in
+    ;; application or identifier position:
+    ;;
+    ;; (a) we must ensure that method takes at least 1 argument that is self,
+    ;;
+    ;; (b) we must ensure that self is now bound to the table in method's body,
+    ;; for that we need to take care of two possible cases:
+    ;;
+    ;;   (b-1) we can simply curry method of arity more than 1 passing it the
+    ;;   table as the first argument,
+    ;;
+    ;;   (b-2) method that takes only self (so, arity 1) cannot be curried, so
+    ;;   instead we return a thunk whose body invokes method passing it the table.
     ((_ . id:tck) (syntax/loc stx
                     (let ((proc (get: id.table 'id.key)))
                       ;; TODO wait, would that check work for structs with
@@ -356,9 +367,11 @@
                                     (procedure-arity (λ (_ . rest) _))
                                     (procedure-arity proc)))
                         (raise-result-error 'id "procedure of at least 1 argument" proc))
-                      (curry (get: id.table 'id.key) id.table))))
+                      (if (arity=? 1 (procedure-arity proc))
+                          (thunk (proc id.table))
+                          (curry proc id.table)))))
 
-    ((_ . id:id) #'(#%top . id))
+    ((_ . id:id) (syntax/loc stx (#%top . id)))
 
     (_ (raise-syntax-error '#%top "invalid syntax in top"))))
 
