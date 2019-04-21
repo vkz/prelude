@@ -345,19 +345,35 @@
 
     ((_ . id:tdk) (syntax/loc stx (get: id.table 'id.key)))
 
+    ;; TODO ensure arity errors for methods generate meaningful errors
+
+    ;; TODO maybe do procedure->method to report arity without self?
+
     ;; NOTE this clause runs every time table:method appears in code, whether in
-    ;; application or identifier position:
+    ;; application or identifier position. Also, note that if unbound identifier
+    ;; occurs inside a list it'll be wrapped in #%top after the surrounding list
+    ;; is wrapped in #%app. So, when we get here the receiver of the method (i.e.
+    ;; the table) is known regardless of whether it is about to be called or
+    ;; called later. To ensure the correct receiver is used when that happens we
+    ;; essentially "curry" the original method with self bound to the receiver
+    ;; (the table here). Two caveats:
     ;;
-    ;; (a) we must ensure that method takes at least 1 argument that is self,
+    ;; (a) we may not use curry no matter the method arity, this is because in
+    ;; Racket curry is itself curried, that is:
     ;;
-    ;; (b) we must ensure that self is now bound to the table in method's body,
-    ;; for that we need to take care of two possible cases:
+    ;;   ((curry proc)) = (curry proc)
     ;;
-    ;;   (b-1) we can simply curry method of arity more than 1 passing it the
-    ;;   table as the first argument,
+    ;;   so for example with method of arity > 1 (takes self and other args),
+    ;;   immediate invocation as below will not report arity error, it'll simply
+    ;;   return the same curried method. It'll keep doing that until the expected
+    ;;   argument count is reached
     ;;
-    ;;   (b-2) method that takes only self (so, arity 1) cannot be curried, so
-    ;;   instead we return a thunk whose body invokes method passing it the table.
+    ;;   ((curry method self)) => (curry method self)
+    ;;
+    ;; (b) we want to allow methods with keyword arguments, which means simple
+    ;; curry and apply are out anyway. Luckily a combination of
+    ;; make-keyword-procedure and keyword-apply appear to do the right thing
+    ;; whether methods take keyword args or by position args alone.
     ((_ . id:tck) (syntax/loc stx
                     (let ((proc (get: id.table 'id.key)))
                       ;; TODO wait, would that check work for structs with
@@ -367,9 +383,11 @@
                                     (procedure-arity (λ (_ . rest) _))
                                     (procedure-arity proc)))
                         (raise-result-error 'id "procedure of at least 1 argument" proc))
-                      (if (arity=? 1 (procedure-arity proc))
-                          (thunk (proc id.table))
-                          (curry proc id.table)))))
+                      (make-keyword-procedure
+                       ;; methods that may take keyword args
+                       (λ (kws kw-args . rest) (keyword-apply proc kws kw-args id.table rest))
+                       ;; methods that only take by-position args
+                       (λ args (apply proc id.table args))))))
 
     ((_ . id:id) (syntax/loc stx (#%top . id)))
 

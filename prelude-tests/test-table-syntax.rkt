@@ -26,19 +26,45 @@
 
 
 (define (run-define/table-tests)
+
   (define/checked tbl {})
   (void (checked (define/table tbl.key 42)))
   (void (checked (define/table (tbl.f arg) (+ 1 arg))))
-  (void (checked (define/table (tbl:meth key) self.key)))
-  ;; method of arity 1, i.e. takes only self
+  ;; method of arity 0, takes only self
   (void (checked (define/table (tbl:meth0) self.key)))
+  ;; method of arity > 0, takes self and more args
+  (void (checked (define/table (tbl:meth1 key) self.key)))
+  ;; method of arity 0 with keyword args
+  (void (checked (define/table (tbl:kwmeth0 #:key [key 'key]) (get: self key))))
+  ;; method of arity > 0 with keyword args
+  (void (checked (define/table (tbl:kwmeth1 inc #:key [key 'key]) (+ inc (or (get: self key) 0)))))
+
+  ;; key lookup
   (check-eq? tbl.key 42)
+  ;; function call
   (check-eq? (tbl.f 42) 43)
-  (check-eq? (tbl:meth 'key) 42)
-  ;; arity 1 method in application position
+  ;; arity 1 method call
+  (check-eq? (tbl:meth1 'key) 42)
+  (check-eq? (let ((method tbl:meth1)) (method 'key)) 42)
+  ;; arity 0 method call
   (check-eq? (tbl:meth0) 42)
-  ;; arity 1 in identifier position
   (check-eq? (let ((method tbl:meth0)) (method)) 42)
+  ;; arity 0 with keyword args method call
+  (check-eq? (tbl:kwmeth0) 42)
+  (check-eq? (tbl:kwmeth0 #:key 'key) 42)
+  (check-eq? (tbl:kwmeth0 #:key 'nokey) undefined)
+  (check-eq? (let ((method tbl:kwmeth0)) (method)) 42)
+  (check-eq? (let ((method tbl:kwmeth0)) (method #:key 'key)) 42)
+  ;; arity 1 with keyword args method call
+  (check-eq? (tbl:kwmeth1 1) 43)
+  (check-eq? (tbl:kwmeth1 1 #:key 'key) 43)
+  (check-eq? (tbl:kwmeth1 1 #:key 'nokey) 1)
+  (check-eq? (let ((method tbl:kwmeth1)) (method 1)) 43)
+  (check-eq? (let ((method tbl:kwmeth1)) (method 1 #:key 'key)) 43)
+
+  ;; arity mismatch
+  (check-exn exn:fail:contract:arity? (thunk (tbl:meth1)) "arity mismatch")
+  (check-exn exn:fail:contract:arity? (thunk (tbl:kwmeth1)) "arity mismatch")
 
   ;; NOTE unbound identifier is a compile time error that we can't just merily
   ;; catch at runtime
