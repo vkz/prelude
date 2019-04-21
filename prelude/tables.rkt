@@ -313,15 +313,28 @@
 
 
 (define-syntax (app stx)
-  (syntax-parse stx
 
-    ;; TODO check for correct syntax inside e
-    ((_ e:expr ...)
-     #:when (eq? #\{ (syntax-property stx 'paren-shape))
-     #'(table e ...))
+  ;; TODO syntax validation and reporting probably belongs in table not the {}, or
+  ;; maybe even in both places here and in table
 
-    ((_ f e ...)
-     #'(#%app f e ...))))
+  (define-syntax-class table-entry
+    (pattern
+     (~describe #:role "table entry"
+                "key-value pair"
+                ((~and key:expr (~not (~literal quote))) value:expr))))
+
+  (if (eq? #\{ (syntax-property stx 'paren-shape))
+
+      ;; parse {}
+      (syntax-parse stx
+        #:context (list '|{ }| (with-syntax (((_ e ...) stx))
+                                 (syntax/loc stx {e ...})))
+        ((_ entry:table-entry ...)
+         (syntax/loc stx (table entry ...))))
+
+      ;; delegate to Racket's #:app
+      (with-syntax (((_ f e ...) stx))
+        (syntax/loc stx (#%app f e ...)))))
 
 
 ;;** - #%top -------------------------------------------------------- *;;
@@ -359,12 +372,18 @@
 ;;** - define/table ------------------------------------------------- *;;
 
 
+;; TODO support for nested (define/table ((foo.bar arg) arg) and such.
+
+
+;; NOTE Attempt to define a key in a table-id that is unbound will report an
+;; unbound identifier. This is in line with Lua but also seems more prudent. We
+;; could get fancy and helpfully bind such identifier to a fresh table (see
+;; `identifier-binding'), but I think attempt to deal with an unbound id is almost
+;; always a bug somewhere.
+
+
 (define-syntax (define/table stx)
   (syntax-parse stx
-
-    ;; TODO maybe guard these with (let ((t id.table)) (unless (table? t) error)),
-    ;; or maybe even better if t is unbound, bind it to a fresh table! I wonder if
-    ;; testing for bound is even possible? Worst case we could handle exn.
 
     ((_ id:tdk e:expr)
      ;; (define/table table.key val)

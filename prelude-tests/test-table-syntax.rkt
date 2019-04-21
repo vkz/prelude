@@ -41,3 +41,8 @@
 
 (module+ test
   (run-define/table-tests))
+
+(module+ test
+  (test-case "{ } constructor must catch bad syntax"
+    (check-exn exn:fail:syntax? (thunk (convert-compile-time-error {42 ('key 'val)})) #rx"expected key-value")
+    (check-exn exn:fail:syntax? (thunk (convert-compile-time-error {('key 'val) 'foo})) #rx"expected key-value")))
