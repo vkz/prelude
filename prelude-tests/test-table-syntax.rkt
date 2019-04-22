@@ -3,11 +3,12 @@
 (require prelude/testing
          syntax/macro-testing)
 
-(provide run-tests
-         run-define/table-tests)
+(provide run-basic-table-tests
+         run-define/table-tests
+         run-simple-inheritance-tests)
 
 
-(define (run-tests)
+(define (run-basic-table-tests)
 
   (define/checked t {('a (λ (a) (+ a 42)))
                      ('b 2)
@@ -20,7 +21,7 @@
 
 
 (module+ test
-  (run-tests))
+  (run-basic-table-tests))
 
 
 (define (run-define/table-tests)
@@ -80,7 +81,7 @@
     (check-exn exn:fail:syntax? (thunk (convert-compile-time-error {('key 'val) 'foo})) "expected (key value) pair")))
 
 
-(module+ test
+(define (run-simple-inheritance-tests)
 
   (define/checked Account {('balance 0)})
 
@@ -183,3 +184,7 @@
     (void (set: d 'limit 100))
     (void (checked (d:withdraw 10)))
     (check-eq? d.balance -15)))
+
+
+(module+ test
+  (run-simple-inheritance-tests))

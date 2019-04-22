@@ -398,12 +398,6 @@
     (_ (raise-syntax-error '#%top "invalid syntax in top"))))
 
 
-(module+ test
-  (define run-table-syntax-tests
-    (dynamic-require 'prelude-tests/test-table-syntax 'run-tests))
-  (run-table-syntax-tests))
-
-
 ;;** - define/table ------------------------------------------------- *;;
 
 
@@ -471,11 +465,26 @@
   ;; catch at runtime
   (require syntax/macro-testing)
   (check-exn exn? (thunk (convert-compile-time-error
-                          (define/table undefined-t.foo 42))))
+                          (define/table undefined-t.foo 42)))))
 
-  (define run-define/table-tests
-    (dynamic-require 'prelude-tests/test-table-syntax 'run-define/table-tests))
-  (run-define/table-tests))
+
+(module+ test
+  ;; NOTE Tests defined in prelude-tests/test-table-syntax
+
+  ;; Since we cannot define table language tests here due to circularity, we
+  ;; define and provide them as functions elsewhere and do this dynamic require
+  ;; trick so we can run all table tests locally at dev time
+  (define-syntax-rule (run-provided-tests #:in module test-thunk ...)
+    (begin
+      (define test-thunk (dynamic-require 'module 'test-thunk))
+      ...
+      (test-thunk)
+      ...))
+
+  (run-provided-tests #:in prelude-tests/test-table-syntax
+                      run-basic-table-tests
+                      run-define/table-tests
+                      run-simple-inheritance-tests))
 
 
 ;;* Reader ------------------------------------------------------- *;;
