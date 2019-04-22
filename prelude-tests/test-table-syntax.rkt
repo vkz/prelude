@@ -6,6 +6,7 @@
 (provide run-tests
          run-define/table-tests)
 
+
 (define (run-tests)
 
   (define/checked t {('a (λ (a) (+ a 42)))
@@ -13,11 +14,8 @@
                      ('c (λ (self key) (get: self key)))})
 
   (check-eq? (t.a 1) 43)
-
   (check-eq? t.b 2)
-
   (check-eq? (t:c 'b) 2)
-
   (check-exn exn:fail:contract? (thunk (list 1 t:d 2)) "procedure of at least 1 argument"))
 
 
@@ -75,7 +73,113 @@
 (module+ test
   (run-define/table-tests))
 
+
 (module+ test
   (test-case "{ } constructor must catch bad syntax"
-    (check-exn exn:fail:syntax? (thunk (convert-compile-time-error {42 ('key 'val)})) #rx"expected key-value")
-    (check-exn exn:fail:syntax? (thunk (convert-compile-time-error {('key 'val) 'foo})) #rx"expected key-value")))
+    (check-exn exn:fail:syntax? (thunk (convert-compile-time-error {42 ('key 'val)})) "expected (key value) pair")
+    (check-exn exn:fail:syntax? (thunk (convert-compile-time-error {('key 'val) 'foo})) "expected (key value) pair")))
+
+
+(module+ test
+
+  (define/checked Account {('balance 0)})
+
+  (void (checked (define/table (Account:withdraw v)
+                   (set: self 'balance (- self.balance v))
+                   self)))
+
+  (void (checked (define/table (Account:deposit v)
+                   (set: self 'balance (+ self.balance v))
+                   self)))
+
+  (void (checked (define/table (Account:new [o {}])
+                   (set: self '__index self)
+                   (set-meta-table! o self)
+                   o)))
+
+
+  (test-case "invoke simple methods"
+
+    ;; initial balance
+    (check-eq? 0 Account.balance)
+
+    ;; deposit
+    (void (checked (Account:deposit 100)))
+    (check-eq? Account.balance 100)
+
+    ;; withdraw
+    (void (checked (Account:withdraw 100)))
+    (check-eq? Account.balance 0))
+
+
+  ;; inherit from another table ("class")
+  (define/checked LimitedAccount (Account:new))
+  (check-true (table? LimitedAccount))
+
+
+  ;; instantiate from a "class"
+  (define/checked s (LimitedAccount:new {('limit 1000)}))
+
+
+  (test-case "simple inheritance"
+
+    (check-eq? s.limit 1000)
+    (check-eq? s.balance 0)
+
+    ;; deposit
+    (void (s:deposit 100))
+    (check-eq? s.balance 100)
+
+    ;; withdraw
+    (void (s:withdraw 100))
+    (check-eq? s.balance 0))
+
+
+  (test-case "add new method to prototype"
+
+    ;; add method to prototype
+    (void (checked (define/table (LimitedAccount:get-limit)
+                     (or self.limit 0))))
+
+    ;; should be visible in the instance
+    (check-eq? (s:get-limit) 1000))
+
+
+  (test-case "override inherited method"
+
+    ;; method override
+    (void (checked (define/table (LimitedAccount:withdraw v)
+                     (if (> (- v self.balance) (self:get-limit))
+                         (error "insufficient funds")
+                         (set: self 'balance (- self.balance v))))))
+
+    (check-exn exn? (thunk (s:withdraw 1100)) "insufficient funds")
+    (check-eq? (begin (s:withdraw 500) s.balance) -500))
+
+
+  (test-case "extend inheritance chain"
+
+    ;; inherit
+    (define/checked OverdraftAccount (LimitedAccount:new {('fee 5)}))
+    (check-true (table? OverdraftAccount))
+
+    ;; instantiate
+    (define/checked d (OverdraftAccount:new))
+    (check-eq? d.fee 5)
+
+    ;; override method but delegate to older
+    (void (checked (define/table (OverdraftAccount:withdraw v)
+                     ;; TODO we need a cleaner way to delegate to prototypes
+                     (let ((delegate (get-meta-table
+                                      (get-meta-table self))))
+                       (delegate.withdraw self (+ self.fee v))))))
+
+    (check-eq? d.withdraw OverdraftAccount.withdraw)
+    (check-eq? d.withdraw (get: (get-meta-table d) 'withdraw))
+
+    (check-exn exn? (thunk (d:withdraw 10)) "insufficient funds")
+    (check-eq? d.balance 0)
+
+    (void (set: d 'limit 100))
+    (void (checked (d:withdraw 10)))
+    (check-eq? d.balance -15)))

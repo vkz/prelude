@@ -10,7 +10,7 @@
 ;;* Provides -------------------------------------------------------- *;;
 
 
-(provide table table? set-meta-table! rawset! app top
+(provide table table? set-meta-table! get-meta-table rawset! app top
          define/table)
 
 
@@ -129,6 +129,10 @@
 (define (set-meta-table! t mt)
   (set-lua-meta-table! t mt)
   t)
+
+
+(define (get-meta-table t)
+  (lua-meta-table t))
 
 
 (define (rawset! t k v)
@@ -320,7 +324,7 @@
   (define-syntax-class table-entry
     (pattern
      (~describe #:role "table entry"
-                "key-value pair"
+                "(key value) pair"
                 ((~and key:expr (~not (~literal quote))) value:expr))))
 
   (if (eq? #\{ (syntax-property stx 'paren-shape))
@@ -486,6 +490,18 @@
 
 ;; TODO Milestone 1: all examples in Lua book Ch20 and Ch21 must work correctly.
 ;; TODO Milestone 3: FastCGI in #lang racket/tables
+
+
+;; TODO candidates for pre-defined base methods that every table has access to:
+;;
+;; (t:meta) - get meta-table
+;; (t:meta v) - set meta-table to v
+;; (t:get key ...) - lookup key sequence
+;; (t:set key ... v) - insert or update entry at key sequence to v
+;; (t:send message . args) - call method aka send message with t as receiver
+;;
+;; IMO ideally these will have generic counterparts that simply dispatch on the
+;; table by invoking its corresponding base method
 
 
 ;; TODO table as function should act like sending corresponding message to that
