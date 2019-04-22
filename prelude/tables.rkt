@@ -484,7 +484,8 @@
   (run-provided-tests #:in prelude-tests/test-table-syntax
                       run-basic-table-tests
                       run-define/table-tests
-                      run-simple-inheritance-tests))
+                      run-simple-inheritance-tests
+                      run-multiple-inheritance-tests))
 
 
 ;;* Reader ------------------------------------------------------- *;;

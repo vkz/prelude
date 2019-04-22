@@ -5,7 +5,8 @@
 
 (provide run-basic-table-tests
          run-define/table-tests
-         run-simple-inheritance-tests)
+         run-simple-inheritance-tests
+         run-multiple-inheritance-tests)
 
 
 (define (run-basic-table-tests)
@@ -188,3 +189,44 @@
 
 (module+ test
   (run-simple-inheritance-tests))
+
+
+(define (run-multiple-inheritance-tests)
+
+  ;; NOTE Example straight from Lua book. It works but is hardly the way to do it
+  ;; in practice. At the very minimum there is a question of identity, that is any
+  ;; instance should better be able to identify as any of its parents, in this
+  ;; case account isa Named and isa Account. It also bakes in the way keys are
+  ;; looked up down the inheritance chain. account:new would simply create another
+  ;; instance of the same class NamedAccount - might not be the best use for it.
+  ;; Probably other issues, too. Decent test case, though.
+
+  (define (create-class . parents)
+    (define mt {})
+    (define/table (mt:__index key)
+      (for/first ((parent (in-list parents))
+                  #:when (not (undefined? (get: parent key))))
+        (get: parent key)))
+
+    (define class {})
+    (set: class '__index class)
+    (set-meta-table! class mt)
+    (define/table (class:new [t {}])
+      (set-meta-table! t class)
+      t)
+    class)
+
+  (define/checked Account {('balance 0)})
+  (void (checked (define/table (Account:get-balance) self.balance)))
+
+  (define/checked Named {})
+  (void (checked (define/table (Named:get-name) self.name)))
+
+  (define/checked NamedAccount (create-class Account Named))
+  (define/checked account (NamedAccount:new {('name "Mike")}))
+  (check-equal? (account:get-name) "Mike")
+  (check-eq? (account:get-balance) 0))
+
+
+(module+ test
+  (run-multiple-inheritance-tests))
