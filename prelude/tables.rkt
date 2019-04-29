@@ -501,6 +501,46 @@
   prelude/tables-lang)
 
 
+(comment
+ ;; TODO way to deal with . .. : :: operators in the reader
+ (define parse-lp
+   (case-lambda
+     ((char port)
+      ;; read
+      (define ((default-read/prefix prefix) bytes-matched)
+        (read/recursive #;port (input-port-append #t (open-input-string prefix) port)
+                        #;char #\(
+                        #;readtable #f))
+      (cond
+        ((regexp-try-match #px"^[.]\\s+"    port) => (default-read/prefix "send "))
+        ((regexp-try-match #px"^[.][.]\\s+" port) => (default-read/prefix "sendmeta "))
+        ((regexp-try-match #px"^[:]\\s+"    port) => (default-read/prefix "send/self "))
+        ((regexp-try-match #px"^[:][:]\\s+" port) => (default-read/prefix "sendmeta/self "))
+        (else (read/recursive port #\( #f))))
+     ((char port src line col pos)
+      ;; read-syntax
+      (datum->syntax
+       #f
+       (parse-lp char port)
+       ;; TODO I doubt this computes correct offset given the above send
+       ;; replacements occur
+       (let-values ([(l c p) (port-next-location port)])
+         (list src line col pos (and pos (- p pos))))))))
+
+ (parameterize ((current-readtable (make-readtable (current-readtable) #\( 'terminating-macro parse-lp))
+                (current-input-port (open-input-string #<<eof
+(begin
+  (. foo 'meth a b)
+  (.. foo 'meth a b)
+  (: foo 'meth a b)
+  (:: foo 'meth a b))
+eof
+)))
+  (read))
+;; comment
+)
+
+
 ;;* Notes -------------------------------------------------------- *;;
 
 
