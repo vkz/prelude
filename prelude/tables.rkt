@@ -38,6 +38,8 @@
      (if (hash-has-key? (lua-table dict) key)
          (hash-ref (lua-table dict) key)
          (if (lua-meta-table dict)
+             ;; TODO better convention for predefined metakeys is :<index> inline
+             ;; with metatable naming convention <table>
              (let ((index (dict-ref (lua-meta-table dict) '__index)))
                (cond ((lua? index)
                       (dict-ref index key))
@@ -336,6 +338,10 @@
         ((_ entry:table-entry ...)
          (syntax/loc stx (table entry ...))))
 
+      ;; TODO this may actually be incorrect, e.g. (foo x . y) would simply fail
+      ;; the below pattern-match. Either we need to allow such applications (Eli's
+      ;; trick from Swindle) or better do (_ . rest) => (#%app . rest)
+
       ;; delegate to Racket's #:app
       (with-syntax (((_ f e ...) stx))
         (syntax/loc stx (#%app f e ...)))))
@@ -498,8 +504,8 @@
 ;;* Notes -------------------------------------------------------- *;;
 
 
-;; TODO Milestone 1: all examples in Lua book Ch20 and Ch21 must work correctly.
-;; TODO Milestone 3: FastCGI in #lang racket/tables
+;; TODO Milestone: MTP - Meta-table Protocol
+;; TODO Milestone: FastCGI in #lang racket/tables
 
 
 ;; TODO candidates for pre-defined base methods that every table has access to:
@@ -514,8 +520,20 @@
 ;; table by invoking its corresponding base method
 
 
-;; TODO table as function should act like sending corresponding message to that
-;; table:
+;; TODO Table as function and table as method IMO could be implemented as generic
+;; methods that by default delegate to corresponding metamethods __proc and
+;; __method. This way we introduce flexibility at a higher level where you can
+;; specialize the generics, at a lower level you could control behavior by
+;; modifying relevant metamethods.
+
+
+;; TODO Similarly, table lookup with get and modifying entries with set could be a
+;; combination of generics and corresponding metamethods __get (__index) and
+;; __set, with reasonable default behavior (standard metamethods).
+
+
+;; TODO default table as function should act like sending corresponding message to
+;; that table:
 ;;
 ;; (table 'key . args) => ((get: table 'key) table . args)
 ;; (table proc . args) => (proc table . args)
@@ -523,7 +541,9 @@
 ;; (table key-table . args) => (key-table table . args) => repeat inf
 
 
-;; TODO extended constructor
+;; TODO extended constructor - amounts to instantiating from foo metatable, that
+;; aka (foo:new #:kw1 option #:kw2 option {('a 1) ('b 2)}])
+;;
 ;;   {foo #:kw1 option
 ;;        #:kw2 option
 ;;        ('a 1)
