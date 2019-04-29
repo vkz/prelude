@@ -11,7 +11,8 @@
 
 
 (provide table table? set-meta-table! get-meta-table rawset! app top
-         define/table)
+         define/table
+         tag? tag->string)
 
 
 (module+ test
@@ -312,7 +313,22 @@
              #:when (table-dot-key? #'id)
              #:do [(match-define (list table key) (table-dot-key? #'id))]
              #:with table table
-             #:with key key)))
+             #:with key key))
+
+  (define-syntax-class tag
+    (pattern id:id
+             #:when
+             (regexp-match #px"^[:]\\S+" (symbol->string (syntax->datum #'id))))))
+
+
+(define (tag? t)
+  (and (symbol? t)
+       (string-prefix? (symbol->string t) ":")))
+
+
+(define/contract (tag->string t)
+  (-> tag? string?)
+  (symbol->string t))
 
 
 ;;** - #%app -------------------------------------------------------- *;;
@@ -398,6 +414,9 @@
                        (λ (kws kw-args . rest) (keyword-apply proc kws kw-args id.table rest))
                        ;; methods that only take by-position args
                        (λ args (apply proc id.table args))))))
+
+    ;; wrap :tags in #%datum
+    ((_ . id:tag) (syntax/loc stx (#%datum . id)))
 
     ((_ . id:id) (syntax/loc stx (#%top . id)))
 
@@ -491,7 +510,8 @@
                       run-basic-table-tests
                       run-define/table-tests
                       run-simple-inheritance-tests
-                      run-multiple-inheritance-tests))
+                      run-multiple-inheritance-tests
+                      run-tags-tests))
 
 
 ;;* Reader ------------------------------------------------------- *;;

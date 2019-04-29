@@ -6,7 +6,8 @@
 (provide run-basic-table-tests
          run-define/table-tests
          run-simple-inheritance-tests
-         run-multiple-inheritance-tests)
+         run-multiple-inheritance-tests
+         run-tags-tests)
 
 
 (define (run-basic-table-tests)
@@ -230,3 +231,21 @@
 
 (module+ test
   (run-multiple-inheritance-tests))
+
+
+(define (run-tags-tests)
+  ;; :tags
+  (check-eq? ':tag :tag)
+  (check-eq? (get: {(:key 42)} :key) 42)
+
+  (check-true (tag? :tag))
+  (check-true (tag? ':tag))
+  (check-false (tag? 'tag))
+
+  (check-equal? ":tag" (tag->string :tag))
+  ;; checks contract
+  (check-exn exn:fail:contract? (thunk (tag->string 'tag))))
+
+
+(module+ test
+  (run-tags-tests))

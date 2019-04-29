@@ -1,16 +1,30 @@
 * Prelude
 
-** TODO :tag trick
+** DONE :tag trick
+CLOSED: [2019-04-29 Mon 15:50]
 
 by wrapping them in #%datum.
 
-We'll call them tags. Maybe Racket printer could be coerced to print ':foo as
-:foo? This only really ever matters in REPL and logging, I guess.
+We'll call them tags.
+
++Maybe Racket printer could be coerced to print ':foo as :foo? This only really
+ever matters in REPL and logging, I guess.+
+
+#+begin_note
+Racket printer tries to move quote outside of any compound datum like list,
+vector, table, so :tags rarely print with prepended quote.
+#+end_note
 
 I don't think we should prohibit binding tag-like identifiers. If its bound, so be
 it, just use the binding. User should know what they are doing.
 
-*** TODO syntax highlight :tags in racket-mode
+*** DONE syntax highlight :tags in racket-mode
+CLOSED: [2019-04-29 Mon 16:01]
+
+Sadly, appears that order of highlighting rules for Racket matters and if I
+merrily add one for :tags with ~font-lock-add-keywords~ it breaks all of Racket
+highlighting. Had to hardcode the rule in /racket-font-lock.el/ so now tags use
+~racket-selfeval-face~, which I don't mind.
 
 ** TODO ~> macro
 
