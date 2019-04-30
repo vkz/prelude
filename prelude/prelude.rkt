@@ -15,19 +15,19 @@
          get: set:
          ht-equality
          ht-immutable
-         ht hti
-         kv
-         kv*)
+         ht hti ht*)
 
 
-(require syntax/parse
-         (for-syntax syntax/parse)
+(require (for-syntax syntax/parse)
          racket/generic
          racket/undefined)
 
 
 (define-syntax-rule (comment . any) (void))
 (define-syntax-rule (example . any) (void))
+(begin-for-syntax
+  (define-syntax-rule (comment . any) (void))
+  (define-syntax-rule (example . any) (void)))
 
 
 (module+ test
@@ -196,20 +196,82 @@
     ((list (? (op-is? equal?)) #f) make-hash)))
 
 
-(define-syntax (ht stx)
-  (syntax-parse stx
-    ;; with equality
-    ((_ #:eq op:expr (key:expr value:expr) ...)
-     #'(parameterize ((ht-equality op)) ((ht-constructor) `((,key . ,value) ...))))
+(begin-for-syntax
 
-    ((_ (key:expr value:expr) ... #:eq op:expr)
-     #'(parameterize ((ht-equality op)) ((ht-constructor) `((,key . ,value) ...))))
+  ;; NOTE We want to be able to use the same name _ht_ to both construct
+  ;; hash-tables with inner key-value pairs implicitly quoted and match
+  ;; hash-tables inside match. So, ht needs to be a macro as well as a
+  ;; match-expander of the same name. The only way to prevent naming conflict is
+  ;; to bind ht with define-syntax to the following struct. It's the trick I
+  ;; learnt from docs for prop:pattern-expander which lets you extend syntax-parse
+  ;; with a new pattern, so e.g. by adding this prop to ht-expander I could define
+  ;; a new pattern for syntax-parse but I won't.
+  (struct ht-expander (expand match-expand)
+    #:property prop:procedure 0
+    #:property prop:match-expander 1)
 
-    ;; with default equality
-    ((_ (key:expr value:expr) ...)
-     #'((ht-constructor) `((,key . ,value) ...)))))
+  (define ht-expand
+    (syntax-parser
+      ;; with equality
+      ((_ #:eq op:expr (key:expr value:expr) ...)
+       #'(parameterize ((ht-equality op)) ((ht-constructor) `((,key . ,value) ...))))
+
+      ((_ (key:expr value:expr) ... #:eq op:expr)
+       #'(parameterize ((ht-equality op)) ((ht-constructor) `((,key . ,value) ...))))
+
+      ;; with default equality
+      ((_ (key:expr value:expr) ...)
+       #'((ht-constructor) `((,key . ,value) ...)))))
+
+  ;; NOTE We extend Racket match with two table patterns ht - strict pattern where
+  ;; every sub-pattern must match, and ht* - permissive pattern where any missing
+  ;; keys would simply be bound to undefined. Both support final repeat ...
+  ;; pattern that would match remaining table entries. Both work for hash-tables
+  ;; and alists.
+
+  ;; NOTE basic idea for ht match-expander
+  (example
+   (match (dict->list (ht ('a 1) ('b 2)))
+     ((hash-table ('b v)) v)
+     ((list-no-order (cons 'b vb) (cons 'a va) _ ...) (list va vb)))
+   ;; example
+   )
+
+  (define-syntax-class ht
+    (pattern ((~datum quote) var:id) #:with key this-syntax #:attr ignore #f)
+    (pattern (key var) #:attr ignore #f)
+    (pattern (~literal _) #:with key #f #:with var #f #:attr ignore #t)
+    (pattern var:id #:with key (datum->syntax #'var `',(syntax-e #'var)) #:attr ignore #t))
+
+  (define ht-match-expand
+    (syntax-parser
+
+      ;; allow final repeating pattern: (keypat valpat) ...
+      ((_ ht:ht ... (~seq htlast:ht (~literal ...)))
+       #:with ht...    (if (attribute htlast) #'(htlast (... ...)) #'())
+       #:with alist... (if (attribute htlast)
+                           (if (attribute htlast.ignore)
+                               #'(htlast (... ...))
+                               #'((cons htlast.key htlast.var) (... ...)))
+                           #'())
+       ;; TODO to stay true to types that implement dict interface this matcher
+       ;; should have another branch to somehow work for vectors but I wonder if
+       ;; that'd be at all useful.
+       #`(or (hash-table (ht.key ht.var) ... #,@#'ht...)
+             (list-no-order (cons ht.key ht.var) ... #,@#'alist...)))
+
+      ;; only key val patterns
+      ((_ ht:ht ...)
+       #`(or (hash-table (ht.key ht.var) ...)
+             (list-no-order (cons ht.key ht.var) ... _ (... ...)))))))
 
 
+;; Syntax: mutable hash-table constructor that doubles as a match pattern of the
+;; same name.
+(define-syntax ht (ht-expander ht-expand ht-match-expand))
+
+
+;; Syntax: immutable hash-table constructor just for completeness
 (define-syntax (hti stx)
   (syntax-parse stx
     ;; with equality
@@ -225,117 +287,65 @@
 
 
 (module+ test
+  (test-case "ht and hti constructors"
 
-  (let ((key "key"))
-    (check-eq? 42 (get: (ht (key 1) ('nested (ht ('foo 42))) #:eq eqv?) 'nested 'foo)))
+    (let ((key "key"))
+      (check-eq? 42 (get: (ht (key 1) ('nested (ht ('foo 42))) #:eq eqv?) 'nested 'foo)))
 
-  (let ((h (ht ('type 1) ('tag 42))))
-    (check-false (immutable? h))
-    (check-pred hash-equal? h))
-
-  (let ((h (ht ('type 1) ('tag 42) #:eq eqv?)))
-    (check-false (immutable? h))
-    (check-pred hash-eqv? h))
-
-  (let ((h (ht #:eq eq? ('type 1) ('tag 42))))
-    (check-false (immutable? h))
-    (check-pred hash-eq? h))
-
-  (let ((h (hti #:eq eq? ('type 1) ('tag 42))))
-    (check-pred immutable? h)
-    (check-pred hash-eq? h))
-
-  (parameterize ((ht-immutable true)
-                 (ht-equality eqv?))
     (let ((h (ht ('type 1) ('tag 42))))
+      (check-false (immutable? h))
+      (check-pred hash-equal? h))
+
+    (let ((h (ht ('type 1) ('tag 42) #:eq eqv?)))
+      (check-false (immutable? h))
+      (check-pred hash-eqv? h))
+
+    (let ((h (ht #:eq eq? ('type 1) ('tag 42))))
+      (check-false (immutable? h))
+      (check-pred hash-eq? h))
+
+    (let ((h (hti #:eq eq? ('type 1) ('tag 42))))
       (check-pred immutable? h)
-      (check-pred hash-eqv? h))))
+      (check-pred hash-eq? h))
 
-
-;; NOTE We extend Racket match with two table patterns kv - strict pattern where
-;; every sub-pattern must match, and kv* - permissive pattern where any missing
-;; keys would simply be bound to undefined. Both support final repeat ... pattern
-;; that would match remaining table entries. Both work for hash-tables and alists.
-
-
-(comment
- ;; NOTE basic idea for ht match-expander
- (match (dict->list (ht ('a 1) ('b 2)))
-   ((hash-table ('b v)) v)
-   ((list-no-order (cons 'b vb) (cons 'a va) _ ...) (list va vb)))
- ;; comment
- )
-
-
-(begin-for-syntax
-  (define-syntax-class ht
-    (pattern ((~datum quote) var:id) #:with key this-syntax #:attr ignore #f)
-    (pattern (key var) #:attr ignore #f)
-    (pattern (~literal _) #:with key #f #:with var #f #:attr ignore #t)
-    (pattern var:id #:with key (datum->syntax #'var `',(syntax-e #'var)) #:attr ignore #t)))
-
-
-;; TODO I'd much rather have this expander be called `ht', alas `ht' is already
-;; bound to our table constructor macro. I wonder if there's a way to have both.
-;; IMO there must be a way around it e.g. see define/match* example. More
-;; generally appears that at least structs manage to bind both their constructor
-;; and match transformer with the same name.
-
-
-;; strict kv pattern
-(define-match-expander kv
-  (syntax-parser
-
-    ;; allow final repeating pattern: (keypat valpat) ...
-    ((_ ht:ht ... (~seq htlast:ht (~literal ...)))
-     #:with ht...    (if (attribute htlast) #'(htlast (... ...)) #'())
-     #:with alist... (if (attribute htlast)
-                         (if (attribute htlast.ignore)
-                             #'(htlast (... ...))
-                             #'((cons htlast.key htlast.var) (... ...)))
-                         #'())
-     ;; TODO to stay true to types that implement dict interface this matcher
-     ;; should have another branch to somehow work for vectors but I wonder if
-     ;; that'd be at all useful.
-     #`(or (hash-table (ht.key ht.var) ... #,@#'ht...)
-           (list-no-order (cons ht.key ht.var) ... #,@#'alist...)))
-
-    ;; only key val patterns
-    ((_ ht:ht ...)
-     #`(or (hash-table (ht.key ht.var) ...)
-           (list-no-order (cons ht.key ht.var) ... _ (... ...))))))
+    (parameterize ((ht-immutable true)
+                   (ht-equality eqv?))
+      (let ((h (ht ('type 1) ('tag 42))))
+        (check-pred immutable? h)
+        (check-pred hash-eqv? h)))))
 
 
 (module+ test
+  (test-case "match with ht-pattern"
 
-  ;; hash-tables
-  (check equal? '(1 2 3) (match (ht ('a 1) ('b 2) ('c 3))
-                           ((kv a 'b ('c c)) (list a b c))))
+    ;; hash-tables
+    (check equal? '(1 2 3) (match (ht ('a 1) ('b 2) ('c 3))
+                             ((ht a 'b ('c c)) (list a b c))))
 
-  (check equal? '(1 (2 3)) (match (ht ('a 1) ('b 2) ('c 3))
-                             ((kv 'a ((? symbol?) v) ...) (list a v))))
+    (check equal? '(1 (2 3)) (match (ht ('a 1) ('b 2) ('c 3))
+                               ((ht 'a ((? symbol?) v) ...) (list a v))))
 
-  (check equal? '(1) (match (ht ('a 1) ('b 2) ('c 3))
-                             ((kv 'a _ ...) (list a))))
+    (check equal? '(1) (match (ht ('a 1) ('b 2) ('c 3))
+                         ((ht 'a _ ...) (list a))))
 
-  ;; alists
-  (check equal? '(1 2 3) (match (dict->list (ht ('a 1) ('b 2) ('c 3) ('d 4)))
-                           ((kv a 'b ('c c)) (list a b c))))
+    ;; alists
+    (check equal? '(1 2 3) (match (dict->list (ht ('a 1) ('b 2) ('c 3) ('d 4)))
+                             ((ht a 'b ('c c)) (list a b c))))
 
 
-  (check equal? '(1 (2 3)) (match (dict->list (ht ('a 1) ('b 2) ('c 3)))
-                             ((kv 'a ((? symbol?) v) ...) (list a v))))
+    (check equal? '(1 (2 3)) (match (dict->list (ht ('a 1) ('b 2) ('c 3)))
+                               ((ht 'a ((? symbol?) v) ...) (list a v))))
 
-  (check equal? '(1) (match (dict->list (ht ('a 1) ('b 2) ('c 3)))
-                       ((kv 'a _ ...) (list a)))))
+    (check equal? '(1) (match (dict->list (ht ('a 1) ('b 2) ('c 3)))
+                         ((ht 'a _ ...) (list a))))))
 
 
 (define (immutable-or-alist? t)
   (or (immutable? t) (alist? t)))
 
 
-;; permissive kv* pattern
-(define-match-expander kv*
+;; permissive ht* pattern
+(define-match-expander ht*
   (syntax-parser
 
     ;; allow final repeating pattern: (keypat valpat) ...
@@ -347,7 +357,7 @@
                              #'((cons htlast.key htlast.var) (... ...)))
                          #'())
 
-     ;; NOTE idea: => (app λ (list var ...) (kv-pat with final repeat pat only))
+     ;; NOTE idea: => (app λ (list var ...) (ht-pat with final repeat pat only))
      ;; Where λ basically removes every key that appears as pattern from the
      ;; table, so that we can match the final repeat pattern against that trimmed
      ;; table. Ugly and expensive but it works.
@@ -378,35 +388,36 @@
 
 (module+ test
 
-  ;; hash-tables
-  (check equal? (list 1 2 undefined) (match (ht ('a 1) ('b 2))
-                                       ((kv* a b c) (list a b c))))
+  (test-case "match with ht*-pattern"
 
-  (check equal? (list 1 2 undefined (set 4 5))
-         (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
-           ((kv* a b c ((? symbol?) v) ...) (list a b c (list->set v)))))
+    ;; hash-tables
+    (check equal? (list 1 2 undefined) (match (ht ('a 1) ('b 2))
+                                         ((ht* a b c) (list a b c))))
 
-  (check equal? (list 1 2 undefined (set '(e . 5) '(d . 4)))
-         (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
-           ((kv* a b c (k v) ...) (list a b c (list->set (map cons k v))))))
+    (check equal? (list 1 2 undefined (set 4 5))
+           (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
+             ((ht* a b c ((? symbol?) v) ...) (list a b c (list->set v)))))
 
-  (check equal? (list 1 2 undefined)
-         (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
-           ((kv* a b c _ ...) (list a b c))))
+    (check equal? (list 1 2 undefined (set '(e . 5) '(d . 4)))
+           (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
+             ((ht* a b c (k v) ...) (list a b c (list->set (map cons k v))))))
 
-  ;; alists
-  (check equal? (list 1 2 undefined) (match (dict->list (ht ('a 1) ('b 2)))
-                                       ((kv* a b c) (list a b c))))
+    (check equal? (list 1 2 undefined)
+           (match (ht ('a 1) ('b 2) ('d 4) ('e 5))
+             ((ht* a b c _ ...) (list a b c))))
 
-  (check equal? (list 1 2 undefined (set 4 5))
-         (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
-           ((kv* a b c ((? symbol?) v) ...) (list a b c (list->set v)))))
+    ;; alists
+    (check equal? (list 1 2 undefined) (match (dict->list (ht ('a 1) ('b 2)))
+                                         ((ht* a b c) (list a b c))))
 
-  (check equal? (list 1 2 undefined (set '(e . 5) '(d . 4)))
-         (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
-           ((kv* a b c (k v) ...) (list a b c (list->set (map cons k v))))))
+    (check equal? (list 1 2 undefined (set 4 5))
+           (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
+             ((ht* a b c ((? symbol?) v) ...) (list a b c (list->set v)))))
 
-  (check equal? (list 1 2 undefined)
-         (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
-           ((kv* a b c _ ...) (list a b c)))))
+    (check equal? (list 1 2 undefined (set '(e . 5) '(d . 4)))
+           (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
+             ((ht* a b c (k v) ...) (list a b c (list->set (map cons k v))))))
 
+    (check equal? (list 1 2 undefined)
+           (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
+             ((ht* a b c _ ...) (list a b c))))))
