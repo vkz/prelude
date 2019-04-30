@@ -26,27 +26,45 @@ merrily add one for :tags with ~font-lock-add-keywords~ it breaks all of Racket
 highlighting. Had to hardcode the rule in /racket-font-lock.el/ so now tags use
 ~racket-selfeval-face~, which I don't mind.
 
+*** TODO consider ~font-lock-builtin-face~ for :tags in suffix position
+
+One thing we could do to further improve readability is to tweak the regexp so
+that any foo:bar highligts :bar part as say ~font-lock-builtin-face~.
+
 ** TODO ~> macro
 
 #+begin_src racket
-  ;; probably needs to local-expand befor processing internal forms. Also, lets
-  ;; allow any ~foo identifier, which would make ~ placeholders self-annotating and
-  ;; improve code reading experience. Maybe also allow guards between expressions:
-  ;;
   (~> bar
       #:guard defined?
       (foo ~)
       #:guard dict?
-      (get ~ :a :b :c)
-      #:=> hash-table?
-      (get ~ :d)
-      #:=> table?
-      ;; or even
-      ;; (~:meth 1 2)
+      (get ~dict :a :b :c)
+      #:do ((match-define (ht a b) (compute ~))
+            (define-values (x y) (baz ~ a b))
+            (set ~table :a :b :d (list a b)))
+      (~:meth a b)
       ;; which I think rewrites correctly as long as I either bind ~ as needed, or
       ;; maybe even better bind ~ either as local syntax parameter or id transformer
-      )
+      #:with ((list m n) ~)
+      ;; note that ~ does not appear anywhere below, we allow this by rewriting into
+      ;; (let () accumulated-expressions (list a b x y m n)) or maybe begin instead
+      ;; of let. We then continue as before with ~ expanding into that let-expr.
+      (list a b x y m n))
 #+end_src
+
+Alexis' [[https://github.com/lexi-lambda/threading][threading]] library does almost exactly what I want at least with respect to
+holes. I think I want more though as per example above:
+1. #:guard short-circuits execution if predicate fails,
+2. #:with like in syntax-classes,
+3. #:do like in syntax-classes,
+4. #:fail-unless and #:fail-when like guard but throw an error,
+5. allow ~id holes eq to just ~ to improve readability and add context,
+6. allow ~:id, ditto for . .. ::
+7. allow id:~, ditto for . .. ::
+8. allow ~ in app position.
+
+If I'm honest only 5-8 aren't entirely frivolous. 1-4 maybe better served as just
+your normal body with intermediate definitions.
 
 ** TODO named lambda
 
