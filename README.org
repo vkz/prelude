@@ -605,7 +605,118 @@ of expensive computation:
 
 * TIL in Racket
 
+** free-vars                                                           :TIL:
+
+Are not vars without bindings, they are vars that are lambda- or let-bound but
+outside of the expression being tested.
+
+~(lambda (x ~) (print-body-free-vars (lambda (y) (~> 42 (list ~)))))~
+
+so in the above x and ~ are free-vars in the inner lambda, but ~> is simply
+unbound and will, upon full expansion, be wrapped in #%top.
+
+** Struct as syntax transformer with props (e.g. prop:match-expander)  :TIL:
+
+To avoid naming conflicts.
+
+Basically, you can define a ~prop:match-expander~ on a struct and then bind syntax
+transformer to that struct it will work as a pattern in ~match~. The cool part is
+that you can also define ~prop:procedure~ in the same struct which will work as a
+macro expander, so you can have both match-pattern and a macro to share the same
+name. Struct must be defined ~for-syntax~. For an example see my ~ht~
+implementation: when used as macro it is a hash-table constructor, but it can also
+be used with no conflict inside match for pattern-matching on hash-tables.
+Awesome!
+
+Same can be achieved for ~syntax-parse~ patterns with ~prop:pattern-expander~.
+
+I learnt this from an example in docs for ~prop:pattern-expander~.
+
 ** [[file:~/Code/racket/racket/doc/reference/stxtrans.html?q=syntax-local-lift-expression#%2528def._%2528%2528quote._~23~25kernel%2529._syntax-local-lift-expression%2529%2529][syntax-local-lift-expression]]
+
+** syntax-parse notes
+
+*** syntax helpers
+
+~(require syntax/stx)~ has helpers to avoid syntax->list and syntax-e e.g.
+stx-map, stx-car, stx-cdr
+
+~replace-context~ might be helpful - borrows contexct from syntax but preserves
+locations.
+
+~(require syntax/keyword)~ Use a keyword table with ~parse-keyword-options~ to
+parse keyword options. Likely a more robust approach than pattern-matching in
+syntax-parse. Use ~check-expression~ or other predefined check-procedures to just
+grab syntaxes that are keyword args. Same lib provides functions to extract parsed
+options.
+
+I don't really understand it but there is ~transform-template~ that e.g. lets you
+preserve certain info and properties that syntax may otherwise lose, e.g.
+'paren-shape. Docs offer an example. Given my interest in preserving curlies for
+tables this maybe useful, but I don't understand when I would need it.
+
+**** [[https://docs.racket-lang.org/syntax-classes/index.html][additional syntax classes]]
+
+have ~paren-shape~, ~paren-shape/braces~ classes and ~braces pattern! Which I
+could've used for my {} table constructor.
+
+There's also class to match struct id transformers, which may tell me how to
+extend gen:associative to structs. Incidentally another source of that info could
+be Jay's [[https://docs.racket-lang.org/struct-define/index.html][struct-define]] (specifically, see [[https://github.com/jeapostrophe/struct-define/blob/master/main.rkt][its source]]).
+
+*** Parsing and specifying syntax
+
+:expr syntax class matches anything but keywords.
+
+Optionally match with ~seq [(~seq pat ...) | (~seq)] and ~optional, then
+conditionally splice with ~?, better still consider factoring out into a
+(splicing) syntax class.
+
+Always add #:name to ~optional for better error reporting.
+
+Do not hesitate to normilize syntaxes especially when using splicing-classes that
+match both single terms (e.g. clauses that are lists) and actuall sequences like
+keyword followed by options.
+
+If normalization doesn't cut it and heavy processing is to follow use
+non-syntax-valued attributes i.e. use Racket compound data e.g. hash-tables or
+structs to collect syntaxes as #:attr, then pull out with (attribute foo.bar).
+
+Place additional contractual constraints with #:declare expr/c-syntax-class
+combination. This effectively adds phase-0 runtime contract checks on generated
+expressions.
+
+Don't forget to use #:context parse-option for correct error reporting when
+parsing fails, mostly matters when parsing some intermediate syntax we generate.
+
+#:conventions that imports pattern-variable conventions defined with
+define-conventions are pretty awesome and apparantly how Redex does its magic.
+
+Don't forget that syntax-classes can take parameters.
+
+Use define/syntax-parse in place of with-syntax or define/with-syntax that uses
+simpler syntax-case patterns.
+
+Create non-syntax attributes with #:attr or ~bind head pat.
+
+Create syntax attributes with #:with or ~parse head pat.
+
+Don't forget ~this-syntax~ is bound to stx being matched in syntax-class
+definition or syntax-parse expr.
+
+~(require syntax/parse/lib/function-header)~ provides syntax classes to match
+typical function headers and formal params. Better than me rolling my own.
+Attributes aren't documented but can easily see them in the source.
+
+Some support for debugging syntax-parse and syntax classes exists:
+- syntax-class-parse,
+- debug-parse,
+- (debug-syntax-parse!).
+
+Quasisyntax + unsyntax are often awkward and used with syntax objects introduce
+too much noise. This maybe remedied with with experimental ~template~ and
+~define-template-metafunction~. Its kinda cool, I've seen this used to great
+effect in Redex.
 
 * Racket questions
 
