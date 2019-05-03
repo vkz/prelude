@@ -284,11 +284,21 @@
 
 (begin-for-syntax
 
+  ;; TODO do we need to check it doesn't already begin with : or :: ?
+  (define (string->tag str)
+    (string->symbol (format ":~a") str))
+
+
   (define (table-colon-key? id)
     (match (symbol->string (syntax->datum id))
       ((regexp #rx"^(.+)\\:(.+)$" (list _ table key))
-       (list (datum->syntax id (string->symbol table) id)
-             (datum->syntax id (string->symbol key) id)))
+       (list
+        ;; table
+        (datum->syntax id (string->symbol table) id)
+        ;; tag key
+        (datum->syntax id (string->symbol (format ":~a" key)) id)
+        ;; sym key
+        (datum->syntax id (string->symbol key) id)))
 
       (else #f)))
 
@@ -296,7 +306,11 @@
     (match (symbol->string (syntax->datum id))
       ((regexp #rx"^(.+)\\.(.+)$" (list _ table key))
        (list
+        ;; table
         (datum->syntax id (string->symbol table) id)
+        ;; tag key
+        (datum->syntax id (string->symbol (format ":~a" key)) id)
+        ;; sym key
         (datum->syntax id (string->symbol key) id)))
 
       (else #f)))
@@ -304,16 +318,18 @@
   (define-syntax-class tck
     (pattern id:id
              #:when (table-colon-key? #'id)
-             #:do [(match-define (list table key) (table-colon-key? #'id))]
+             #:do [(match-define (list table tag key) (table-colon-key? #'id))]
              #:with table table
-             #:with key key))
+             #:with key key
+             #:with tag tag))
 
   (define-syntax-class tdk
     (pattern id:id
              #:when (table-dot-key? #'id)
-             #:do [(match-define (list table key) (table-dot-key? #'id))]
+             #:do [(match-define (list table tag key) (table-dot-key? #'id))]
              #:with table table
-             #:with key key))
+             #:with key key
+             #:with tag tag))
 
   (define-syntax-class tag
     (pattern id:id
@@ -369,7 +385,10 @@
 (define-syntax (top stx)
   (syntax-parse stx
 
-    ((_ . id:tdk) (syntax/loc stx (get: id.table 'id.key)))
+    ;; TODO revisit my logic ops, this or here will return #f instead of
+    ;; undefined, I may have been too hasty overloading or and etc
+    ((_ . id:tdk) (syntax/loc stx (or (get: id.table 'id.tag)
+                                      (get: id.table 'id.key))))
 
     ;; TODO ensure arity errors for methods generate meaningful errors
 
@@ -401,7 +420,8 @@
     ;; make-keyword-procedure and keyword-apply appear to do the right thing
     ;; whether methods take keyword args or by position args alone.
     ((_ . id:tck) (syntax/loc stx
-                    (let ((proc (get: id.table 'id.key)))
+                    (let ((proc (or (get: id.table 'id.tag)
+                                    (get: id.table 'id.key))))
                       ;; TODO wait, would that check work for structs with
                       ;; proc:prop?
                       (unless (and (procedure? proc)
@@ -567,6 +587,10 @@ eof
 ;; TODO Milestone: MTP - Meta-table Protocol
 ;; TODO Milestone: FastCGI in #lang racket/tables
 
+
+;; TODO Expose dot and colon identifier notation, so users may override it in
+;; their lang/tables: we could wrap relevant syntax in #%.id #%:id #%..id #%::id.
+;; Could push it even further and allow user-defined separators.
 
 ;; TODO candidates for pre-defined base methods that every table has access to:
 ;;

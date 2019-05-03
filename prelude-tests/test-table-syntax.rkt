@@ -244,7 +244,18 @@
 
   (check-equal? ":tag" (tag->string :tag))
   ;; checks contract
-  (check-exn exn:fail:contract? (thunk (tag->string 'tag))))
+  (check-exn exn:fail:contract? (thunk (tag->string 'tag)))
+
+  (define/checked t {(:a (λ (a) (+ a 42)))
+                     (:b 2)
+                     (:c (λ (self key) (get: self key)))
+                     ('d 42)})
+
+  ;; t.id and t:id syntax must try :id tags first
+  (check-eq? (t.a 1) 43)
+  (check-eq? t.b 2)
+  (check-eq? t.d 42)
+  (check-eq? (t:c :b) 2))
 
 
 (module+ test
