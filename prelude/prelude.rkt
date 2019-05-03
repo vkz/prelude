@@ -15,10 +15,11 @@
          get: set:
          ht-equality
          ht-immutable
-         ht hti ht*)
+         ht hti ht*
+         ~>)
 
 
-(require (for-syntax syntax/parse)
+(require (for-syntax syntax/parse syntax/keyword racket/match)
          racket/generic
          racket/undefined)
 
@@ -421,3 +422,138 @@
     (check equal? (list 1 2 undefined)
            (match (dict->list (ht ('a 1) ('b 2) ('d 4) ('e 5)))
              ((ht* a b c _ ...) (list a b c))))))
+
+
+;; TODO easy to implement standard ~> and ~>> in terms of my ~> below, not sure I
+;; really need them, though. Only decent syntactic solution I can think of is to
+;; have three macros: ~ ~> ~>>, but then how do I tell ~ as a hole from everything
+;; else? Use _ instead maybe?
+
+;; TODO it would be nice to break computation when #:guard fails, but what
+;; semantics should it employ: essentially it needs to escape the entire ~> thread
+;; and possibly return some value, defaulting to #f maybe? This means we need to
+;; pass escape continuation, I guess e.g. to be invoked inside with (<~ val)?
+;; Should we check for #:guard and #:do clauses first to see if continuation might
+;; be used or let/ec doesn't make ~> more expensive?
+
+(define-syntax (~> stx)
+
+  (define (unbound? stx)
+    (define top-level-or-unbound (not (identifier-binding stx)))
+    (define not-top-level-bound (not (identifier-binding stx (syntax-local-phase-level) #t)))
+    (and top-level-or-unbound
+         not-top-level-bound))
+
+  (define (~id? stx)
+    (regexp-match #px"^~" (symbol->string (syntax-e stx))))
+
+  (define-syntax-class ~
+    (pattern id:id #:when (and (~id? #'id) (unbound? #'id))))
+
+  (define-syntax-class clause
+    #:attributes ((pre 1) hole (post 1))
+    (pattern (pre ... hole:~ post ...))
+    (pattern (pre ...)
+             #:with (post ...) #'()
+             #:attr hole #f))
+
+  (define kw-table
+    (list (list '#:guard check-expression)
+          (list '#:do check-expression)
+          (list '#:with check-identifier check-expression)))
+
+  (define (fix-outer/ctx ctx stx [loc #f])
+    (datum->syntax ctx (syntax-e stx) loc))
+
+  (define (options->syntaxes options)
+    (for/list ((opt (in-list options)))
+      (match opt
+        ((list #:with ctx id e)
+         (with-syntax ((id id) (e e))
+           (fix-outer/ctx ctx #'(define id e) ctx)))
+
+        ((list #:do ctx body)
+         (define/syntax-parse (e:expr ...) body)
+         (fix-outer/ctx ctx #'(begin e ...) ctx))
+
+        ((list-rest kw ctx _)
+         (raise-syntax-error #f (format "unexpected keyword ~a" kw) ctx ctx)))))
+
+  ;; TODO #:guard once I figure its semantics
+
+  (syntax-parse stx
+
+    ;; no more clauses
+    ((_ e:expr) #'e)
+
+    ;; keyword options before the next clause
+    ((_ e:expr (~peek _:keyword) . rest)
+     #:do ((define-values (options clauses)
+             (parse-keyword-options #'rest kw-table
+                                    #:context this-syntax)))
+     #:with (clause ...) clauses
+     #:with body (fix-outer/ctx this-syntax #'(~> val clause ...) this-syntax)
+     #:with (options ...) (datum->syntax this-syntax (options->syntaxes options) this-syntax)
+     (fix-outer/ctx this-syntax
+                    #'(begin (define val e) options ... body)
+                    this-syntax))
+
+    ;; clause with hole
+    ((_ e:expr c:clause rest ...)
+     #:when (attribute c.hole)
+     #:with clause/e (fix-outer/ctx this-syntax #'(c.pre ... e c.post ...) #'c)
+     (fix-outer/ctx this-syntax #'(~> clause/e rest ...) this-syntax))
+
+    ;; cluase with no hole
+    ((_ e:expr c:clause rest ...)
+     #:when (not (attribute c.hole))
+     #:with clause (fix-outer/ctx this-syntax #'(c.pre ... c.post ...) #'c)
+     (fix-outer/ctx this-syntax
+                    #'(begin e (~> clause rest ...))
+                    this-syntax))))
+
+
+(module+ test
+
+  (check-eq? (~> 'foo
+                 (symbol->string ~)
+                 (format ":~a" ~str)
+                 (string->symbol ~))
+             ':foo)
+
+  (check-eq? (~> 'foo
+                 (symbol->string ~)
+                 (format ":~a" ~str)
+                 ;; threading can be split by expr that ignores the result
+                 (list 42)
+                 (car ~))
+             42)
+
+  ;; exn: symbol->string: contract violation
+  (check-exn exn:fail:contract?
+             (thunk
+              (~> '42
+                  (symbol->string ~)
+                  (format ":~a" ~str)
+                  (string->symbol ~))))
+
+  ;; ensure macro introduced val doesn't capture outside val
+  (check-eq? (let ((val 0))
+               (~> val
+                   (+ 1 ~)
+                   #:do ()
+                   ;; val must still be 0
+                   (+ val ~)))
+             1)
+
+  (check-equal? (~> 'foo
+                    (symbol->string ~)
+                    #:with bar "-bar"
+                    #:with baz "-baz"
+                    (string-append ~foo bar baz)
+                    (format ":~a" ~str)
+                    (string->symbol ~)
+                    #:do ((define l (list 1 2))
+                          (set! l (cons 0 l)))
+                    (cons ~sym l))
+                '(:foo-bar-baz 0 1 2)))
