@@ -436,6 +436,37 @@
 ;; Should we check for #:guard and #:do clauses first to see if continuation might
 ;; be used or let/ec doesn't make ~> more expensive?
 
+;; TODO make ~ available in #:with and #:do. Here's my current idea. I can't
+;; merily "temprarily" bind ~ say in rhs of #:with or #:do body, because, well
+;; they could be using ~> inside, too. But more importantly, think what we're
+;; doing here. ~ and friends are nothing but markers to be replaced during macro
+;; expansion as needed. So, it isn't right to just treat ~ as nothing but a marker
+;; sometimes but as a binding other times. I say we need to be consistent:
+;;
+;; #:do treat its body "as if" it's just a sequence of ~> clauses, replacing ~
+;;      with its current expr (val) only inside outer most clause parens, just
+;;      like we do in normal ~> clause. One nice pattern emerges: if you want to
+;;      use current ~ value in the rest of the body simply bind it at the top of
+;;      the body e.g. ((define cur ~) . body)
+;;
+;; #:with treat its rhs exactly like ~> clause similarly only replace ~ at the top
+;;        level. Allow one special case when ~ or ~id is the entire rhs. Naturally
+;;        I am thinking about allowing lhs to be a match pattern, with the whole
+;;        thing transformed into a (match-define lhs rhs).
+;;
+;; I think the following example should now work as expected:
+;;
+(example
+ (~> 0
+     (sub1 ~)
+     (define val ex)
+     #:with foo (pre .. ~ post ..)
+     (add1 ~)
+     #:do ((define bar ~))
+     (list foo bar ~))
+ ;; example
+ )
+
 (define-syntax (~> stx)
 
   (define (unbound? stx)
@@ -504,7 +535,7 @@
      #:with clause/e (fix-outer/ctx this-syntax #'(c.pre ... e c.post ...) #'c)
      (fix-outer/ctx this-syntax #'(~> clause/e rest ...) this-syntax))
 
-    ;; cluase with no hole
+    ;; clause with no hole
     ((_ e:expr c:clause rest ...)
      #:when (not (attribute c.hole))
      #:with clause (fix-outer/ctx this-syntax #'(c.pre ... c.post ...) #'c)
