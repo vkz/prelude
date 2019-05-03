@@ -429,13 +429,6 @@
 ;; have three macros: ~ ~> ~>>, but then how do I tell ~ as a hole from everything
 ;; else? Use _ instead maybe?
 
-;; TODO it would be nice to break computation when #:guard fails, but what
-;; semantics should it employ: essentially it needs to escape the entire ~> thread
-;; and possibly return some value, defaulting to #f maybe? This means we need to
-;; pass escape continuation, I guess e.g. to be invoked inside with (<~ val)?
-;; Should we check for #:guard and #:do clauses first to see if continuation might
-;; be used or let/ec doesn't make ~> more expensive?
-
 ;; TODO make ~ available in #:with and #:do. Here's my current idea. I can't
 ;; merily "temprarily" bind ~ say in rhs of #:with or #:do body, because, well
 ;; they could be using ~> inside, too. But more importantly, think what we're
@@ -455,7 +448,6 @@
 ;;        thing transformed into a (match-define lhs rhs).
 ;;
 ;; I think the following example should now work as expected:
-;;
 (example
  (~> 0
      (sub1 ~)
@@ -467,7 +459,20 @@
  ;; example
  )
 
-(define-syntax (~> stx)
+
+(define-for-syntax (fix-outer/ctx ctx stx [loc #f])
+  (datum->syntax ctx (syntax-e stx) loc))
+
+
+(define-syntax ~>
+  (syntax-parser
+    ((_ clauses ...)
+     #:with <~ (datum->syntax this-syntax '<~)
+     #:with body (fix-outer/ctx this-syntax #'(impl~> clauses ...) this-syntax)
+     #'(let/ec <~ body))))
+
+
+(define-syntax (impl~> stx)
 
   (define (unbound? stx)
     (define top-level-or-unbound (not (identifier-binding stx)))
@@ -492,9 +497,6 @@
     (list (list '#:guard check-expression)
           (list '#:do check-expression)
           (list '#:with check-identifier check-expression)))
-
-  (define (fix-outer/ctx ctx stx [loc #f])
-    (datum->syntax ctx (syntax-e stx) loc))
 
   (define (options->syntaxes options)
     (for/list ((opt (in-list options)))
@@ -523,7 +525,7 @@
              (parse-keyword-options #'rest kw-table
                                     #:context this-syntax)))
      #:with (clause ...) clauses
-     #:with body (fix-outer/ctx this-syntax #'(~> val clause ...) this-syntax)
+     #:with body (fix-outer/ctx this-syntax #'(impl~> val clause ...) this-syntax)
      #:with (options ...) (datum->syntax this-syntax (options->syntaxes options) this-syntax)
      (fix-outer/ctx this-syntax
                     #'(begin (define val e) options ... body)
@@ -533,14 +535,14 @@
     ((_ e:expr c:clause rest ...)
      #:when (attribute c.hole)
      #:with clause/e (fix-outer/ctx this-syntax #'(c.pre ... e c.post ...) #'c)
-     (fix-outer/ctx this-syntax #'(~> clause/e rest ...) this-syntax))
+     (fix-outer/ctx this-syntax #'(impl~> clause/e rest ...) this-syntax))
 
     ;; clause with no hole
     ((_ e:expr c:clause rest ...)
      #:when (not (attribute c.hole))
      #:with clause (fix-outer/ctx this-syntax #'(c.pre ... c.post ...) #'c)
      (fix-outer/ctx this-syntax
-                    #'(begin e (~> clause rest ...))
+                    #'(begin e (impl~> clause rest ...))
                     this-syntax))))
 
 
@@ -587,4 +589,11 @@
                     #:do ((define l (list 1 2))
                           (set! l (cons 0 l)))
                     (cons ~sym l))
-                '(:foo-bar-baz 0 1 2)))
+                '(:foo-bar-baz 0 1 2))
+
+  (check-eq? (~> 0
+                 (add1 ~)
+                 #:do ((define bar 42)
+                       (<~ bar))
+                 (list bar ~))
+             42))
