@@ -498,7 +498,7 @@
           (list '#:do check-expression)
           (list '#:with check-identifier check-expression)))
 
-  (define (options->syntaxes options)
+  (define (options->syntaxes prev-clause value options)
     (for/list ((opt (in-list options)))
       (match opt
         ((list #:with ctx id e)
@@ -509,10 +509,16 @@
          (define/syntax-parse (e:expr ...) body)
          (fix-outer/ctx ctx #'(begin e ...) ctx))
 
+        ;; TODO I'm really hating this, either make error message helpful e.g. by
+        ;; installing a contract boundary between clauses or ditch this thing. See
+        ;; with-contract, invariant-assertion or maybe define/contract. I'd have
+        ;; to fix blame object somehow. Are guards even useful here?
+        ((list #:guard ctx guard)
+         (with-syntax ((error (fix-outer/ctx ctx #`(error "guard failed") prev-clause)))
+           (fix-outer/ctx guard #`(unless (#,guard #,value) error) guard)))
+
         ((list-rest kw ctx _)
          (raise-syntax-error #f (format "unexpected keyword ~a" kw) ctx ctx)))))
-
-  ;; TODO #:guard once I figure its semantics
 
   (syntax-parse stx
 
@@ -526,7 +532,7 @@
                                     #:context this-syntax)))
      #:with (clause ...) clauses
      #:with body (fix-outer/ctx this-syntax #'(impl~> val clause ...) this-syntax)
-     #:with (options ...) (datum->syntax this-syntax (options->syntaxes options) this-syntax)
+     #:with (options ...) (datum->syntax this-syntax (options->syntaxes #'e #'val options) this-syntax)
      (fix-outer/ctx this-syntax
                     #'(begin (define val e) options ... body)
                     this-syntax))
