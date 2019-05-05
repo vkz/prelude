@@ -605,6 +605,20 @@ of expensive computation:
 
 * TIL in Racket
 
+** Where ~raco setup~ builds docs from scribblings?                    :TIL:
+
+Basically, install packages you're hacking on in user scope with: ~raco pkg
+install -u~ then docs are built local to the package dir <pkg>/docs, else setup
+moves them to racket/collections.
+
+#+begin_quote
+For a collection that is installed as user-specific (e.g., the user package
+scope), the generated documentation is "doc/manual/index.html" within the
+collection directory. If the collection is installation-wide, however, then the
+documentation is generated as "manual/index.html" in the installation’s "doc"
+directory.
+#+end_quote
+
 ** free-vars                                                           :TIL:
 
 Are not vars without bindings, they are vars that are lambda- or let-bound but
