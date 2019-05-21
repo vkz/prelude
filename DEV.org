@@ -1,3 +1,11 @@
+PRELUDE  -*- mode: org; fill-column: 82 -*-
+#+CATEGORY: prelude
+#+STARTUP: content
+#+seq_todo: TODO STARTED(s@/@) WAITING(w@/@) DELEGATED(l@/@) APPT | DONE(d@/@) DEFERRED(f@/@) CANCELLED(x@/@) IDEA(i/@)
+#+TAGS: { SCHOOL(s) BLOG(b) }
+#+PROPERTY: Effort_ALL 0 0:10 0:30 1:00 2:00 3:00 4:00 5:00 6:00 7:00
+#+COLUMNS: %40ITEM(Task) %17Effort(Estimated Effort){:} %CLOCKSUM
+
 * Prelude
 
 ** DONE :tag trick
@@ -26,13 +34,17 @@ merrily add one for :tags with ~font-lock-add-keywords~ it breaks all of Racket
 highlighting. Had to hardcode the rule in /racket-font-lock.el/ so now tags use
 ~racket-selfeval-face~, which I don't mind.
 
-*** TODO consider ~font-lock-builtin-face~ for :tags in suffix position
+*** IDEA consider ~font-lock-builtin-face~ for :tags in suffix position
+CLOSED: [2019-05-18 Sat 13:36]
 
 One thing we could do to further improve readability is to tweak the regexp so
 that any foo:bar highligts :bar part as say ~font-lock-builtin-face~.
 
-** TODO ~> macro
+** DONE ~> macro
+CLOSED: [2019-05-18 Sat 13:18]
 
+- State "DONE"       from "TODO"       [2019-05-18 Sat 13:18] \\
+  See tilda project
 #+begin_src racket
   (~> bar
       #:guard defined?
@@ -66,7 +78,8 @@ holes. I think I want more though as per example above:
 If I'm honest only 5-8 aren't entirely frivolous. 1-4 maybe better served as just
 your normal body with intermediate definitions.
 
-** TODO named lambda
+** IDEA named lambda
+CLOSED: [2019-05-18 Sat 13:37]
 
 Allow naming lambda so that it can be rucursively called from the body:
 - (nλ foo (args) body)
@@ -75,7 +88,8 @@ Allow naming lambda so that it can be rucursively called from the body:
 Because (lambda args body) is valid we cannot redefine lambda to take the name, so
 it has to be a separate thing.
 
-** TODO (f a b . rest) or (f a b #:rest rest)
+** IDEA (f a b . rest) or (f a b #:rest rest)
+CLOSED: [2019-05-18 Sat 13:37]
 
 eq to (apply f a b rest), this only works when rest is an identifier that evals to
 a list, doesn't magincally work for any expr, due to how reader treats dot. Works
@@ -84,7 +98,8 @@ everything else.
 
 Better yet, and probably cleaner allow explicit #:rest keyword?
 
-** TODO setf => set!
+** IDEA setf => set!
+CLOSED: [2019-05-18 Sat 13:37]
 
 But leverage gen:dict interface as much as possible.
 
@@ -95,21 +110,24 @@ macro, but I wonder if the code it generates could use a generic function that a
 programmer could supply? Like, generate some generic ~genset!~ that dispatches on
 their type, and we could predefine those for well known types.
 
-** TODO let that takes (values ...) pattern
+** IDEA let that takes (values ...) pattern
+CLOSED: [2019-05-18 Sat 13:37]
 
 First check if there is such a thing already e.g. let/match may already support
 even more general destructuring.
 
-** TODO with-slots and with-accessors
+** IDEA with-slots and with-accessors
+CLOSED: [2019-05-18 Sat 13:37]
 
 Not urgent, first I need to see actual use for that. They make for cool macros
 cause they bind identifiers since Racket can do that.
 
 * Tables
+:PROPERTIES:
+:CATEGORY: mtp
+:END:
 
-** TODO t.key t:key t..key t::key method invocations
-
-** TODO Table method invocation operators (. : .. ::)
+** TODO . : .. :: operators
 
 .  = send
 :  = send/self
@@ -146,7 +164,8 @@ cause they bind identifiers since Racket can do that.
       (as s <float>))
 #+end_src
 
-** TODO Table {Constructors}
+** TODO t.key t:key t..key t::key
+** TODO named {Constructors}
 
 #+begin_src racket
 (define t {MetaTable #:kw1 opt1 #:kw2 opt2 (key val) ...})
@@ -157,6 +176,9 @@ cause they bind identifiers since Racket can do that.
 Have that #%table indirection for the same reason Racket offers such forms.
 
 * Metatable Protocol (MTP)
+:PROPERTIES:
+:CATEGORY: mtp
+:END:
 
 One cool test of MTP power is to implement MOP using MTP with the entire shebang
 of classes, generic functions etc. Has a cute circularity to it, too.
@@ -176,7 +198,75 @@ candidates are setters, converters (as), printers, getters, etc (see Swindle's
   ;; where <string> is bound to string-metatable
 #+end_src
 
-** TODO Base or ground interface to tables gen:dict or gen:associative
+** Thougts about dispatch
+
+One cool trick that works really well with multiple isa dispatch and prototypes is
+replacing table's prototype in a method, so that the next dispatch will choose
+different method altogether - this is very much life-like: you used to be young,
+but now you're old, so other methods apply. I really like it.
+
+Metatables already offer a form of generic methods without us doing anything.
+After all t:method is exactly that, and obviously that method may come from
+anywhere on the mt chain of t. I think we want to push this idea as far as it can
+go, and after that also provide generic functions that are not tied to tables.
+
+We need naming convention to avoid ambiguity when talking about generics:
+1. table generics to refer to table methods,
+2. generic functions to refer to simple generic dispatch on the type of the first
+   parameter,
+3. multimethods is the most generic dispatch of all in that it computes a dispatch
+   value (ala Clojure) to dispatch based on some relation defaulting to an isa?
+   relation.
+
+Could implement 2. and 3. above in terms of tables and 1.? That would be neat! I
+think we can if we allow tables to act as procedures, which in Racket we totally
+can. Interestingly, once we do, we could implement even more flexible tables with
+multimethods, maybe? So, this become essentially a bootstrapping exercise.
+
+Given 1., we first implement 2. where each generic function e.g. defined with
+~defgeneric~ is simply a table that inherits from generic-metatable.
+Generic-metatable defines ~__proc~ and ~__index~ so that the former does the
+dispatch while the latter looks up relevant method?
+
+Send, send/self, send meta, getters and setters. Note re Self and uniformity of
+call to compute vs key lookup: yes, Self attempts to be uniform, so from its point
+of view there is no difference between looking up a constant value on the table or
+"invoking" a proc stored under key to compute something, however this is not Self
+and we want to be true to Racket. With Lisp syntax e.g. for function application,
+I see little value in such forced uniformity. That said we could provide similar
+behavior by default simply by way of predefining initial ~get~, ~send~,
+~send/self~ to test if the keyed value is a procedure and simply return it if it
+isn't. It is cute, but ultimately more confusing, I think. First, know your data.
+Second, if it is value you want just use ~get~ - implicit behavior is evil when
+you have to reason how the language is going to interpret your command. Avoid!
+
+After some thinking I realize that even Clojure multiple dispatch that performs
+ad-hoc parameter combination may not be general enough. That is because it leaves
+stuff implicit like the isa relationship it uses. That's true of any kind of
+dispatch IMO. However, if we fully reify every dispatch pushing it to conclusion I
+think we'll arrive at ... rules engines, datalog or prolog style facts and pattern
+matching on those. Seriously. Btw, even without squinting tables are nothing more
+than bags of facts (table - attribute - value triples). Shouldn't we then go all
+out, do datalog "dispatch" with other types of dispatch being but its subsets,
+which naturally we'd want to optimize? With rules engines multiple rules may match
+and fire, but with multimethods we want to induce some order: most specific to
+least specific and if required allow to call-next-method. I think datalog style
+dispatch allows for the most natural disambiguation strategy possibly at the cost
+of expensive computation:
+- each method matches on the set of facts,
+- methods may only ever relate by implication, that is one method's set of facts
+  is a strict subset of another so it is implied by the other, with the other
+  being more specific (so it comes first),
+- naturally, two methods (their fact-set) maybe implied by another method yet have
+  no obvious relationship and therefore way to prefer one over the other. This
+  should be an error to be resolved by introducing more facts into {f2} and/or
+  {f3} until they become exclusive of one another.
+
+         -- {f2}
+   {f1}<
+         -- {f3}
+
+** TODO Replace rawget/set with gen:dict or gen:associative
 
 dict-ref, dict-set or get:, set:
 
@@ -184,7 +274,7 @@ gen:dict interface to act strictly upon the table container itself with no regar
 for metatables etc, this completely replaces raw operations like ~rawget~ or
 ~rawset~.
 
-** TODO gen:table with basic Lua-style prototype dispatch
+** TODO Basic Lua-style dispatch as gen:table
 
 get, set, proc, send, send/self, etc
 
@@ -213,14 +303,12 @@ Table generic (mt dispatch) amounts to:
   (t:meth . args)
 #+end_src
 
-** TODO Metatable hierarchy for isa and isa?
+** TODO Multiple inheritance with <tables> metatable
 
-that includes built-in Racket types and structs
-
-** TODO <tables> metatable for multiple inheritance
-
-Prototype precedence probably by overriding gen:table methods, call-next-method or
-send-next bound within method's body, :before and :after combinations.
+Prototype precedence probably by overriding +gen:table+ (nope, can't be Racket
+generics, cause we are not redefining tables, just using a different mt, so ought to be
+changing metatable methods or multimethods) methods, call-next-method or send-next
+bound within method's body, :before and :after combinations.
 
 May call for <method> metatable for methods.
 
@@ -291,8 +379,63 @@ May call for <method> metatable for methods.
 
 #+end_src
 
+** Multiple dispatch
 
-** TODO <multi> metatable for /isa/ multiple dispatch
+I can think of at least 3 dispatch types - least generic to most generic:
+1. Single argument "type" (metatable) dispatch,
+2. Compute dispatch value for /isa/ multimethod dispatch,
+3. Compute dispatch value for /implies/ predicate dispatch.
+
+With prototype dispatch and multi-prototype dispatch (assuming we define method
+combination for <tables>) and prototypes for built-in Racket datatypes I question
+whether 1. above really brings a new kind of dispatch? Feels like it'd only make sense
+in a class-based language and our prototypes already subsume that.
+
+I'm still a bit fuzzy on how predicate dispatch might work or what it even means, so
+need to read up on that. Things to think about:
+- do we need to relate actual predicate functions,
+- or can we distill to RDF style tables and dispatch on them,
+- e.g. think datalog, prolog, rules engine (RETE), boolean functions, decision trees.
+
+Note there isn't always an obvious /self/ to bind in method body, since 2 and 3 can
+combine arguments to produce a dispatch value. So, an possibly interesting design could
+be binding /self/ to the multi-method instance, which would provide methods to query
+the dispatch e.g. recover the dispatch value as well as method combinators e.g.
+self:next, self:next?, (get self method-value), (self:methods dispatch-value), etc.
+
+Methods should probably derive from <method> mt which at minimum impliments method
+application strategy. Obvious slots are: before, after and when.
+
+Sugar like ~defmethod~ should probably produce and install <method> instances on
+multimethod instances (e.g. on <generic> or <multi>).
+
+*** TODO <generic> metatable for Nth arg metatable dispatch
+
+Could either be its own implementation or a specialization of <multi> metatable /isa/
+dispatch with applicable optimisations.
+
+At the very minimum we may assume that:
+- dispatch arg is a table, or built-in type with predefined mt,
+- every registered method value is a metatable <some-mt>,
+- with meta-table hierarchy in place, dispatch amounts to a lookup, and
+- all registered method values will've been pre-sorted?
+
+Is the above correct?
+
+**** TODO Predefined <generic> methods e.g. get, set
+
+Generic get and set
+
+#+begin_src racket
+;; Also, consider allowing #:fail in get and set
+(get t :a :b :c #:fail (λ _ (error "no such path")))
+;; if (void) assume remedied and repeat attempt, if undefined return it
+(get t :a :b :c #:fail (λ (path last-value failed-key) do-something (void)))
+;; if returns any dict? set the failed key to that and continue
+(get t :a :b :c #:fail (λ _ {}))
+#+end_src
+
+*** TODO <multi> metatable for /isa/ multiple dispatch
 
 Method precedence, call-next-method, :before and :after method combinations.
 
@@ -384,20 +527,33 @@ Rough sketch:
 
 #+end_src
 
+*** TODO Predicate dispatch with ~implies?~ relation
 
-** TODO Predefined multimethods e.g. get, set
+Read my [[*Thougts about dispatch][Thougts about dispatch]] first. There is something about dispatch on the
+"set-of-facts".
 
-Generic get and set
+Effectively multiple predicate dispatch that IIUC generalizes isa and probably others,
+or put differently isa dispatch is a specialization of predicate dispatch.
 
-#+begin_src racket
-;; Also, consider allowing #:fail in get and set
-(get t :a :b :c #:fail (λ _ (error "no such path")))
-;; if (void) assume remedied and repeat attempt, if undefined return it
-(get t :a :b :c #:fail (λ (path last-value failed-key) do-something (void)))
-;; if returns any dict? set the failed key to that and continue
-(get t :a :b :c #:fail (λ _ {}))
-#+end_src
+Here's how it might work:
+- dispatch computes dispatch value as usual,
+- but we compare registered registered method values with implies? rel,
+- if dispatch value implies method value, then method applies,
+- we resolve ambiguities by pairwise implies? over method values,
 
+Could we pre-sort registered method values by implication?
+
+** Metatable hierarchies
+
+*** TODO Metatable hierarchy for isa and isa?
+
+Swindle offers one such implementation but in terms of classes, obviously. This must
+include built-in Racket types and structs else it won't have much use.
+
+*** IDEA Generic way to define metatable hierarchy (for custom relation)
+CLOSED: [2019-05-21 Tue 12:25]
+
+If we are to allow relations other than isa we'll probably need this.
 
 ** Constructing tables
 
@@ -417,7 +573,7 @@ Essentially, the equivalent of CLOS's ~make-instance~ is ~mt:new~ method or
 whatever we end up calling it.
 
 CLOS's ~make-instance~ does no real work other than lookup the class metaobject by
-symbol and delegate to it, the latter again does nothing by call generic
+symbol and delegate to it, the latter again does nothing but call generic
 ~initialize-instance~ that does slot assignment. We can do all of that and more in
 ~mt:new~ method, no need to protocolize, IMO. Any re-initialization of a table
 amounts to either setting and dropping its slots via standard means, or defining a
@@ -425,10 +581,10 @@ method e.g. ~mt:reinit~ to do it in bulk or whatever. Ditto, for ~change-class~,
 just swap out the metatable. Well, we may want to allow custom work if metatable
 ever changes, hm. Maybe ~set-metatable!~ ought to be a table generic, too? I think
 it could work. Just have the default on the base ~metatable~. Most of the busy
-work tha CLOS needs to do here amounts to diffing slot sets on the class before
+work that CLOS needs to do here amounts to diffing slot sets on the class before
 and after. We have it easy, since metatables are just tables, with their own
 slots, as soon as we swap an mt for another, its slots are available to the
-instance unless it shadowes them with slots of the same name.
+instance unless it shadows them with slots of the same name.
 
 ** Printing and navigating
 
@@ -477,7 +633,7 @@ way to get their values with provenance e.g. (values val source) or a pair. Eith
 have a separate kind of getter e.g. ~get/source~ or maybe control the way ~get~
 lookup works with a parameter. Provenance has to be part of the lookup strategy
 though, since value may be computed along the way. Does this mean user must
-provide pair of ~__index~ and ~__inde/source~ or something like that? Mirrors
+provide pair of ~__index~ and ~__index/source~ or something like that? Mirrors
 Racket ~read~ and ~read-syntax~. Yet another design decision.
 
 Naturally, any slot value could itself be a table. It is possible for such slots
@@ -534,74 +690,6 @@ deal with identity:
 What does it mean to create a hierarchy that includes Racket builtin types?
 Probably just have ~isa~ cond with Racket predicates and return corresponding
 table e.g.
-
-** Generic methods and functions
-
-One cool trick that works really well with multiple isa dispatch and prototypes is
-replacing table's prototype in a method, so that the next dispatch will choose
-different method altogether - this is very much life-like: you used to be young,
-but now you're old, so other methods apply. I really like it.
-
-Metatables already offer a form of generic methods without us doing anything.
-After all t:method is exactly that, and obviously that method may come from
-anywhere on the mt chain of t. I think we want to push this idea as far as it can
-go, and after that also provide generic functions that are not tied to tables.
-
-We need naming convention to avoid ambiguity when talking about generics:
-1. table generics to refer to table methods,
-2. generic functions to refer to simple generic dispatch on the type of the first
-   parameter,
-3. multimethods is the most generic dispatch of all in that it computes a dispatch
-   value (ala Clojure) to dispatch based on some relation defaulting to an isa?
-   relation.
-
-Could implement 2. and 3. above in terms of tables and 1.? That would be neat! I
-think we can if we allow tables to act as procedures, which in Racket we totally
-can. Interestingly, once we do, we could implement even more flexible tables with
-multimethods, maybe? So, this become essentially a bootstrapping exercise.
-
-Given 1., we first implement 2. where each generic function e.g. defined with
-~defgeneric~ is simply a table that inherits from generic-metatable.
-Generic-metatable defines ~__proc~ and ~__index~ so that the former does the
-dispatch while the latter looks up relevant method?
-
-Send, send/self, send meta, getters and setters. Note re Self and uniformity of
-call to compute vs key lookup: yes, Self attempts to be uniform, so from its point
-of view there is no difference between looking up a constant value on the table or
-"invoking" a proc stored under key to compute something, however this is not Self
-and we want to be true to Racket. With Lisp syntax e.g. for function application,
-I see little value in such forced uniformity. That said we could provide similar
-behavior by default simply by way of predefining initial ~get~, ~send~,
-~send/self~ to test if the keyed value is a procedure and simply return it if it
-isn't. It is cute, but ultimately more confusing, I think. First, know your data.
-Second, if it is value you want just use ~get~ - implicit behavior is evil when
-you have to reason how the language is going to interpret your command. Avoid!
-
-After some thinking I realize that even Clojure multiple dispatch that performs
-ad-hoc parameter combination may not be general enough. That is because it leaves
-stuff implicit like the isa relationship it uses. That's true of any kind of
-dispatch IMO. However, if we fully reify every dispatch pushing it to conclusion I
-think we'll arrive at ... rules engines, datalog or prolog style facts and pattern
-matching on those. Seriously. Btw, even without squinting tables are nothing more
-than bags of facts (table - attribute - value triples). Shouldn't we then go all
-out, do datalog "dispatch" with other types of dispatch being but its subsets,
-which naturally we'd want to optimize? With rules engines multiple rules may match
-and fire, but with multimethods we want to induce some order: most specific to
-least specific and if required allow to call-next-method. I think datalog style
-dispatch allows for the most natural disambiguation strategy possibly at the cost
-of expensive computation:
-- each method matches on the set of facts,
-- methods may only ever relate by implication, that is one method's set of facts
-  is a strict subset of another so it is implied by the other, with the other
-  being more specific (so it comes first),
-- naturally, two methods (their fact-set) maybe implied by another method yet have
-  no obvious relationship and therefore way to prefer one over the other. This
-  should be an error to be resolved by introducing more facts into {f2} and/or
-  {f3} until they become exclusive of one another.
-
-         -- {f2}
-   {f1}<
-         -- {f3}
 
 * TIL in Racket
 
@@ -733,6 +821,85 @@ too much noise. This maybe remedied with with experimental ~template~ and
 effect in Redex.
 
 * Racket questions
+
+** how do you read, manipulate, debug scope sets?
+
+[[https://groups.google.com/forum/#!topic/racket-users/eF2Cy69IkHw][Asked on list]]
+
+I wrote a macro which introduced an implicit binding <~ so that it could be used
+in expressions at the use-site. Initially did it with
+
+#+begin_src racket
+  ;; inside syntax-parse
+  (datum->syntax this-syntax #'<~)
+#+end_src
+
+followed by macro introduced expr that binds it, then the use-site macro-input
+that uses it. Think (let/ec <~ macro-input-body).
+
+Worked just fine when tested at top-level or module begin or in expression
+position, but then suddenly broke when I wrote another define-like macro whose
+body expanded into the macro above. Turns out scopes of <~ at use-site and one I
+introduced in a macro didn't match, at least that's what I surmount from the
+message below. I was originaly going to ask if someone could teach me to read
+these messages, but then I found ~syntax-debug-info~ in docs :) and IIUC the
+message below tells me there are two identifier bindings where the error occurs
+whose scope-sets share some scopes namely "common scopes ...", but neither one's
+scope-set is a subset of the other hence the error. Am I reading it right?
+
+#+begin_src racket
+; /Users/russki/Code/tilda/prelude/tilda.rkt:303:20: <~: unbound identifier
+;   in: <~
+;   context...:
+;    #(2212719 use-site) #(2212754 intdef) #(2212808 local)
+;    #(2212809 intdef) [common scopes]
+;   other binding...:
+;    local
+;    #(2212718 macro) [common scopes]
+;   common scopes...:
+;    #(2198084 module) #(2198091 module tilda) #(2212726 local)
+;    #(2212727 intdef) #(2212737 local) #(2212738 intdef) #(2212741 local)
+;    #(2212742 intdef) #(2212745 local) #(2212746 intdef) #(2212749 local)
+;    #(2212750 intdef) #(2212753 local)
+#+end_src
+
+I fixed the above with some guesswork that amounted to replacing datum->syntax
+with
+
+#+begin_src racket
+  (syntax-local-introduce #'<~)
+#+end_src
+
+which IIUC simply flips the scopes so now <~ is use-site and may as well be part
+of the macro input. Right?
+
+Suddenly I find myself playing games with hygiene and not really knowing the
+rules.
+
+Are there any tutorials that show you how to use things documented in Syntax
+Transformers chapter of the Reference?
+
+How do you debug these scope games?
+
+How do you introduce or capture identifier bindings (break hygiene)?
+
+Can you temporarily unbind an identifier (for the extent of some expr), so
+basically remove or trim some scopes from identifiers that occur in macro input? I
+suppose there are several possible cases here:
+- trim or replace scopes of ids whose sets match those at use-site, guessing this
+  won't unbind "shadowing" identifiers (let or define introduced in your macro
+  input) i.e. those with extra scopes in addition to use-site,
+- how do we deal with those, could we trim ids whose scope sets are supersets of
+  use-site?
+- assuming I know how to do the above, do I walk the syntax tree and trim those
+  scopes every time I find matching id or is there a better way?
+
+At this point I'd like to better understand how to manipulate sets of scopes and
+verify the result. Could someone kindly teach me or point out good reads or
+examples?
+
+Thanks
+
 
 ** extend Racket with new autoquoted datums ala Racket keywords
 
