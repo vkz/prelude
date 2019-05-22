@@ -2,7 +2,7 @@ PRELUDE  -*- mode: org; fill-column: 82 -*-
 #+CATEGORY: prelude
 #+STARTUP: content
 #+seq_todo: TODO STARTED(s@/@) WAITING(w@/@) DELEGATED(l@/@) APPT | DONE(d@/@) DEFERRED(f@/@) CANCELLED(x@/@) IDEA(i/@)
-#+TAGS: { SCHOOL(s) BLOG(b) }
+#+TAGS: { SCHOOL(s) BLOG(b) TIL(t) }
 #+PROPERTY: Effort_ALL 0 0:10 0:30 1:00 2:00 3:00 4:00 5:00 6:00 7:00
 #+COLUMNS: %40ITEM(Task) %17Effort(Estimated Effort){:} %CLOCKSUM
 
@@ -197,6 +197,101 @@ candidates are setters, converters (as), printers, getters, etc (see Swindle's
     [(string? obj) <string>])
   ;; where <string> is bound to string-metatable
 #+end_src
+
+** TODO Table type must be able "to Racket"
+
+Being "first class" isn't enough, tables must embrace the Racket ecosystem. That
+is we should allow "deriving" new table struct types.
+
+Put differently user must be able to define a new table struct that otherwise like
+tables but might implement some extensions allowed by Racket struct interface.
+
+Motivation: Racket struct offers some truly powerful machinery that permeates
+Racket ecosystem, so it only makes sense that we should let <table> users to make
+good use of it, too. That is to say that prototypes as extension fascilities are
+powerful but aren't enough, since they are mostly oblivious to what Racket
+provides. Here's a motivating example: there is no way atm to treat tables as
+synchronizable events. To get that we'd have to add ~prop:evt~ to the table
+struct, but then it would make every table into an event, which maybe too much.
+Even assuming we are ok with every table doubling as an event, we'd have to
+program a way to customize what tables return on sync since this isn't "one size
+fits all" - users may want different things of them. Sadly, this opens a pandora
+box. Not only would we be reinventing stuff Racket structs already do well, but
+we'd also have to write documentation for that.
+
+My preferred solution would be, in addition to prototype or whatever other type of
+extension mechanism we have for table, to also allow extending them at struct
+level, that is we don't necessarily hide the fact that tables are structs. This
+has an obvious problem: struct inheritance doesn't buy us anything - struct
+extension isn't otherwise like its parent struct - that is the user would have to
+turn it back into a table by extending it some kind table protocol or other.
+
+We must make such extensions natural and boilerplate free. Every struct such
+extended must remain a table. Beats me how to do that.
+
+One way we might be able to do that is to assume that being a table amounts to
+implementing e.g. ~gen:dict~ and ~gen:table~ generic interfaces. Then we provide a
+e.g. ~table~ macro that is like ~struct~ macro i.e. expands into a subtype of
+table, that is table is the base type of this new table type, and that subtype
+implements relevant ~#:methods~. Those methods would have to delegate to the
+methods of the base type, that is of the original table. Constructors like
+~{<some-table>}~ would have to cooperate in that they must expand into a relevant
+generic method call.
+
+If we are going with a macro expanding into ~struct~ or ~define-struct~ it would
+pay to expand into ~define-struct/derived~ so that errors are reported in terms of
+the name user supplies rather than whatever struct syntax we expand into.
+
+*** DONE Ask the mailing list
+CLOSED: [2019-05-22 Wed 16:42]
+
+- State "DONE"       from "TODO"       [2019-05-22 Wed 16:42] \\
+  https://groups.google.com/forum/#!topic/racket-users/GZAtJzK47T4
+
+This would probably sound like rambling but that's only because I am struggling a
+little bit. I implemented a little language that offers its own compound data
+type: first class and users can extend it in various ways. Naturally, it is
+implemented as a Racket ~struct~. As I started using the language, it occured to
+me that I lost something and I'd very much like to get it back.
+
+Racket struct offers some truly powerful machinery that permeates Racket
+ecosystem. Here's a motivating example: having a new fancy first class compound
+(tm) datatype is nice and well, but what if I want it to double as a
+synchronizable event? Oops. I do facilitate extensions, but that's something that
+would need ~prop:evt~ on the underlying struct. I could "extend" my language and
+add this prop myself, but it isn't a given that every instance needs to be an
+event, not to mention there isn't "one size fits all" here, and the user may want
+to customize the result of synchronization, if they even want events at all. More
+generally though, how about other properties that may not even exist yet? Of
+course I could surgically extend my implementation and allow to customize those
+extensions etc. But that kind of opens pandora's box, not to mention most of the
+time it'll simply be a "passthrough" of what Racket structs can already do, and
+all of this nonsense would have to be documented - again why bother given the
+marvel that is Racket documentation?
+
+Conventional wisdom holds that you don't expose implementation details, but
+honestly I'm ok dispensing with the dogma in this case. It isn't obvious to me how
+to do that, though. Suppose, you derive a new stuct somehow: say, it implements
+~prop:evt~ but must otherwise be like your datatype. What does that mean? Struct
+inheritance isn't that - I know that much. It must be a protocol of some kind - a
+set of functions and what not (behaviors, really) that make your fancy datatype
+what it is. One possible solution is Racket generics that is assuming we can
+capture the essence of our type as a set of methods. Suppose for a moment, that we
+could. While the underlying implementation may have changed and become either
+richer or more constrained, it should still act as our fancy datatype. Since
+Racket generics don't delegate to base types, are we to demand that the user
+extends the interface to the struct that is nothing but a wrapper around another
+struct that already implements said interface? That's asking too much IMO.
+
+Is the answer to offer a macro that expands into something like
+
+  (struct extended-type fancy-type () #:methods gen:fancy-iface ...)
+
+where I suspect fancy-iface methods don't need to change at all between macro
+invocations?
+
+This can't be a new problem. Any thoughts or advice?
+
 
 ** Thougts about dispatch
 
@@ -692,6 +787,19 @@ Probably just have ~isa~ cond with Racket predicates and return corresponding
 table e.g.
 
 * TIL in Racket
+
+** Extract struct info from structure type transformer binding         :TIL:
+
+see [[file:~/Code/racket/racket/doc/reference/structinfo.html?q=struct][Structure Type Transformer Binding]] in documentation
+
+#+begin_src racket
+  (struct request (foo bar))
+
+  (begin-for-syntax
+    (displayln
+     (extract-struct-info
+      (syntax-local-value #'request))))
+#+end_src
 
 ** Where ~raco setup~ builds docs from scribblings?                    :TIL:
 
