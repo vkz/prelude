@@ -122,12 +122,137 @@ CLOSED: [2019-05-18 Sat 13:37]
 Not urgent, first I need to see actual use for that. They make for cool macros
 cause they bind identifiers since Racket can do that.
 
-* Tables
+* Metatable Protocol (MTP)
 :PROPERTIES:
 :CATEGORY: mtp
 :END:
 
-** TODO . : .. :: operators
+One cool test of MTP power is to implement MOP using MTP with the entire shebang
+of classes, generic functions etc. Has a cute circularity to it, too.
+
+How do we know our MTP implementation is useful?
+- implement fcgi.rkt with it,
+- implement MOP, then with that MOP implementation implement tables?
+
+And of course experiment with generic operations that should work for many types,
+especially having defined a hierarchy that includes builtin Racket types. Possible
+candidates are setters, converters (as), printers, getters, etc (see Swindle's
+/extra.rkt/ for more ideas).
+
+#+begin_src racket
+  (cond
+    [(string? obj) <string>])
+  ;; where <string> is bound to string-metatable
+#+end_src
+
+** Defining and constructing tables
+
+*** Thoughts on constructors
+
+CLOS and MOP in general instantiate via a generic that dispatches an the symbolic
+name of a class. I see no compelling reason to do the same with tables.
+
+{Meta entry ...} uses Meta that's bound to some table, which CLOS has to compute
+from the symbolic name. If we need to programmatically instantiate tables from a
+metatable it's as easy as (mt-value:new {init-table}). If we want to create a
+metatable that "inherits" from Meta, it's as simple as (set-metatable! mt Meta).
+Why have that symbolic name in the first place? I don't like having to store a
+global table of all tables somewhere in the sky. We could definitely do it if we
+ever need. Basically, I'd rather just stick with Racket object identity or ~isa~
+identity.
+
+Essentially, the equivalent of CLOS's ~make-instance~ is ~mt:new~ method or
+whatever we end up calling it.
+
+CLOS's ~make-instance~ does no real work other than lookup the class metaobject by
+symbol and delegate to it, the latter again does nothing but call generic
+~initialize-instance~ that does slot assignment. We can do all of that and more in
+~mt:new~ method, no need to protocolize, IMO. Any re-initialization of a table
+amounts to either setting and dropping its slots via standard means, or defining a
+method e.g. ~mt:reinit~ to do it in bulk or whatever. Ditto, for ~change-class~,
+just swap out the metatable. Well, we may want to allow custom work if metatable
+ever changes, hm. Maybe ~set-metatable!~ ought to be a table generic, too? I think
+it could work. Just have the default on the base ~metatable~. Most of the busy
+work that CLOS needs to do here amounts to diffing slot sets on the class before
+and after. We have it easy, since metatables are just tables, with their own
+slots, as soon as we swap an mt for another, its slots are available to the
+instance unless it shadows them with slots of the same name.
+
+*** TODO Specing expected slots in the metatable
+
+Even if only for "in-code" documentation. Note we are specing slots for the
+instance not the metatable. If we wanted them to be present on the metatable we'd
+probably just set them right there and then.
+
+#+begin_src racket
+  ;; tell the sure we are registering a metatable - template for new tables.
+  ;; Typically it would have methods on it, possibly defined at later time, but no
+  ;; value slots, those would usually belong on the instance itself, not on mt.
+  ;; However, we may want to communicate what we expect those to be:
+  (define <mt> {<deeper-mt> #:spec ((:foo string?)
+                                    (:bar <some-table>?))})
+#+end_src
+
+our first implementation may do the simplest thing and completely ignore such
+declarations. A more elaborate solution could define contracts or guards to be
+asserted every time a slot is being set e.g. with (t.set :foo "foo"). This will
+cost us and need some careful thought: might benefit from leveraging Racket
+contract system and we should be able to globally or locally disable checks.
+
+A simpler solution, could allow setting slots to undefined but only as part of
+metatable definition e.g.:
+
+#+begin_src racket
+  (define <mt> {<deeper-mt> (:foo undefined)
+                            (:bar undefined)})
+#+end_src
+
+it is simple but loses information (no predicate there) and feels inconsistent
+somehow since we disallow undefined as slot values, but this makes an exception.
+
+By default we assume every slot is possible, but not required, an alternative
+could be defined by disjunction of undefined (signaling allowed absense) with
+predicate (that must be satisfied when slot is present). Contract or predicate by
+itself then signals a required slot. This is certainly more verbose, though.
+
+#+begin_src racket
+  (define <mt> {<deeper-mt> #:spec ((:foo string?)
+                                    (:bar (or undefined? natural?)))})
+
+  ;; making :foo required, but :bar optional - must be natural if defined
+#+end_src
+
+*** TODO Expand {<metatable>} constructor into #%table
+
+Expand into ~#%table~, which we expose and let the user override. This is in
+addition to overriding :new metamethod.
+
+#+begin_src racket
+(define t {<metatable> #:kw1 opt1 #:kw2 opt2 (key val) ...})
+;; =>
+(#%table ...)
+#+end_src
+
+** Base table methods
+
+rawget, rawset
+
+get, set
+
+send, send/self - which by default imply get, but get doesn't imply invocation.
+
+proc - table used as procedure, probably indirectly referenced from prop:proc?
+
+new
+
+as
+
+#+begin_src racket
+  (t:as <string>)
+  (: 42 :as <string>)
+#+end_src
+
+** TODO . : .. :: syntax
 
 .  = send
 :  = send/self
@@ -164,38 +289,40 @@ cause they bind identifiers since Racket can do that.
       (as s <float>))
 #+end_src
 
-** TODO t.key t:key t..key t::key
-** TODO named {Constructors}
+*** TODO Expose #%. and #%.id
+
+Expose dot and colon identifier notation, so users may override it in their
+lang/tables: we could wrap relevant syntax in #%.id #%:id #%..id #%::id. Could
+push it even further and allow user-defined separators.
 
 #+begin_src racket
-(define t {MetaTable #:kw1 opt1 #:kw2 opt2 (key val) ...})
-;; =>
-(#%table ...)
+  (#%. "." . args)
+  (#%. ".." . args)
+  (#%. ":" . args)
+  (#%. "::" . args)
+
+  (#%.id "." . args)
+  (#%.id ".." . args)
+  (#%.id ":" . args)
+  (#%.id "::" . args)
 #+end_src
 
-Have that #%table indirection for the same reason Racket offers such forms.
+*** TODO t.key t:key t..key t::key
 
-* Metatable Protocol (MTP)
-:PROPERTIES:
-:CATEGORY: mtp
-:END:
+*** TODO [#C] . and : in app position
 
-One cool test of MTP power is to implement MOP using MTP with the entire shebang
-of classes, generic functions etc. Has a cute circularity to it, too.
+Both receiver and slot can be computed. This is about the only reason to have this
+particular feature. We could simply replace it with (send ...).
 
-How do we know our MTP implementation is useful?
-- implement fcgi.rkt with it,
-- implement MOP, then with that MOP implementation implement tables?
-
-And of course experiment with generic operations that should work for many types,
-especially having defined a hierarchy that includes builtin Racket types. Possible
-candidates are setters, converters (as), printers, getters, etc (see Swindle's
-/extra.rkt/ for more ideas).
+Not so obvious that I even want . : in app position. For instance, how would I use
+them with ~apply~? Something like this would do the trick, but seems frivolous:
 
 #+begin_src racket
-  (cond
-    [(string? obj) <string>])
-  ;; where <string> is bound to string-metatable
+  (. t :method a b #:apply (list c d))
+  (: t :method a b #:apply (list c d))
+  ;; more generally, for any application
+  (f a b #:apply (list c d))
+  (f a b . rest-id)
 #+end_src
 
 ** TODO Table type must be able "to Racket"
@@ -292,74 +419,22 @@ invocations?
 
 This can't be a new problem. Any thoughts or advice?
 
+*** reply to Greg
 
-** Thougts about dispatch
+#+begin_quote
+p.s. While you "have the hood open", you might also want to do something
+similar for `prop:procedure`?
+#+end_quote
 
-One cool trick that works really well with multiple isa dispatch and prototypes is
-replacing table's prototype in a method, so that the next dispatch will choose
-different method altogether - this is very much life-like: you used to be young,
-but now you're old, so other methods apply. I really like it.
-
-Metatables already offer a form of generic methods without us doing anything.
-After all t:method is exactly that, and obviously that method may come from
-anywhere on the mt chain of t. I think we want to push this idea as far as it can
-go, and after that also provide generic functions that are not tied to tables.
-
-We need naming convention to avoid ambiguity when talking about generics:
-1. table generics to refer to table methods,
-2. generic functions to refer to simple generic dispatch on the type of the first
-   parameter,
-3. multimethods is the most generic dispatch of all in that it computes a dispatch
-   value (ala Clojure) to dispatch based on some relation defaulting to an isa?
-   relation.
-
-Could implement 2. and 3. above in terms of tables and 1.? That would be neat! I
-think we can if we allow tables to act as procedures, which in Racket we totally
-can. Interestingly, once we do, we could implement even more flexible tables with
-multimethods, maybe? So, this become essentially a bootstrapping exercise.
-
-Given 1., we first implement 2. where each generic function e.g. defined with
-~defgeneric~ is simply a table that inherits from generic-metatable.
-Generic-metatable defines ~__proc~ and ~__index~ so that the former does the
-dispatch while the latter looks up relevant method?
-
-Send, send/self, send meta, getters and setters. Note re Self and uniformity of
-call to compute vs key lookup: yes, Self attempts to be uniform, so from its point
-of view there is no difference between looking up a constant value on the table or
-"invoking" a proc stored under key to compute something, however this is not Self
-and we want to be true to Racket. With Lisp syntax e.g. for function application,
-I see little value in such forced uniformity. That said we could provide similar
-behavior by default simply by way of predefining initial ~get~, ~send~,
-~send/self~ to test if the keyed value is a procedure and simply return it if it
-isn't. It is cute, but ultimately more confusing, I think. First, know your data.
-Second, if it is value you want just use ~get~ - implicit behavior is evil when
-you have to reason how the language is going to interpret your command. Avoid!
-
-After some thinking I realize that even Clojure multiple dispatch that performs
-ad-hoc parameter combination may not be general enough. That is because it leaves
-stuff implicit like the isa relationship it uses. That's true of any kind of
-dispatch IMO. However, if we fully reify every dispatch pushing it to conclusion I
-think we'll arrive at ... rules engines, datalog or prolog style facts and pattern
-matching on those. Seriously. Btw, even without squinting tables are nothing more
-than bags of facts (table - attribute - value triples). Shouldn't we then go all
-out, do datalog "dispatch" with other types of dispatch being but its subsets,
-which naturally we'd want to optimize? With rules engines multiple rules may match
-and fire, but with multimethods we want to induce some order: most specific to
-least specific and if required allow to call-next-method. I think datalog style
-dispatch allows for the most natural disambiguation strategy possibly at the cost
-of expensive computation:
-- each method matches on the set of facts,
-- methods may only ever relate by implication, that is one method's set of facts
-  is a strict subset of another so it is implied by the other, with the other
-  being more specific (so it comes first),
-- naturally, two methods (their fact-set) maybe implied by another method yet have
-  no obvious relationship and therefore way to prefer one over the other. This
-  should be an error to be resolved by introducing more facts into {f2} and/or
-  {f3} until they become exclusive of one another.
-
-         -- {f2}
-   {f1}<
-         -- {f3}
+I would agree that it is A solution to this particular problem with this
+particular prop. The "passthrough" of some form or other works well and is always
+open to me as the language maintainer but it amounts to special-casing things and
+making me the sole arbiter of what makes it into the language and what doesn't.
+Notice however that nothing about our fancy datatype changes, its interface
+remains the same, yet user gets a richer type. Which means there ought to be a way
+to generalize this. To use your analogy I'd like to find out if there's a way to
+"leave the hood open" in a clean way or at least let the user do the "passthrough"
+trick without the need to dismantle the entire car.
 
 ** TODO Replace rawget/set with gen:dict or gen:associative
 
@@ -474,12 +549,40 @@ May call for <method> metatable for methods.
 
 #+end_src
 
+** Reflection
+
+Becomes really important and needs to permeate every design decision. What we have
+is an extensive graph or mesh of tables, which the user may need to observe to
+debug things.
+
+Every table will already have direct links to its metatables, but we may also want
+to have backlinks: metatable to its descendants. These would probably need to weak
+links for GC to work.
+
+Multiple dispatch with /isa/ and /implies/ must have reflective features, so that
+we maybe able to see method values registered, maybe even query for uncovered
+values when the match isn't exhaustive. I doubt we could do this in general, but
+if dispatch value and method values are "boolean" tables, then we might? Or more
+generally they may need to be in a form amenable to datalog or prolog unification
+or SMT. /prolog/ (or datalog) approach is particularly interesting, because
+reflection then amounts to querying "in reverse" of the dispatch or maybe letting
+you specify custom queries. In fact this may mean that we may need both SMT and
+/prolog/: former for dispatch, latter for reflection?
+
 ** Multiple dispatch
 
 I can think of at least 3 dispatch types - least generic to most generic:
-1. Single argument "type" (metatable) dispatch,
-2. Compute dispatch value for /isa/ multimethod dispatch,
-3. Compute dispatch value for /implies/ predicate dispatch.
+1. Metatable (prototype) dispatch,
+2. Single argument "type" (metatable) dispatch,
+3. Compute dispatch value for /isa/ multimethod dispatch,
+4. Compute dispatch value for /implies/ predicate dispatch.
+
+At firts glance prototype dispatch is tied to tables, so it would pay to also
+offer /external/ methods. Both /isa/ and /implies/ dispatch are kindof that.
+Methods should still be tables but with customized invocation procedures. That
+said, e.g. dot or colon notation isn't really that special. We could simply
+implement it as an cond-dispatch, that substitutes built-in types with their
+respective <type> metatables and looks up methods there. Dunno.
 
 With prototype dispatch and multi-prototype dispatch (assuming we define method
 combination for <tables>) and prototypes for built-in Racket datatypes I question
@@ -503,6 +606,79 @@ application strategy. Obvious slots are: before, after and when.
 
 Sugar like ~defmethod~ should probably produce and install <method> instances on
 multimethod instances (e.g. on <generic> or <multi>).
+
+*** Thougts about dispatch
+
+One cool trick that works really well with multiple isa dispatch and prototypes is
+replacing table's prototype in a method, so that the next dispatch will choose
+different method altogether - this is very much life-like: you used to be young,
+but now you're old, so other methods apply. I really like it.
+
+Metatables already offer a form of generic methods without us doing anything.
+After all t:method is exactly that, and obviously that method may come from
+anywhere on the mt chain of t. I think we want to push this idea as far as it can
+go, and after that also provide generic functions that are not tied to tables.
+
+We need naming convention to avoid ambiguity when talking about generics:
+1. table generics to refer to table methods,
+2. generic functions to refer to simple generic dispatch on the type of the first
+   parameter,
+3. multimethods is the most generic dispatch of all in that it computes a dispatch
+   value (ala Clojure) to dispatch based on some relation defaulting to an isa?
+   relation.
+
+Could implement 2. and 3. above in terms of tables and 1.? That would be neat! I
+think we can if we allow tables to act as procedures, which in Racket we totally
+can. Interestingly, once we do, we could implement even more flexible tables with
+multimethods, maybe? So, this become essentially a bootstrapping exercise.
+
+Given 1., we first implement 2. where each generic function e.g. defined with
+~defgeneric~ is simply a table that inherits from generic-metatable.
+Generic-metatable defines ~__proc~ and ~__index~ so that the former does the
+dispatch while the latter looks up relevant method?
+
+Send, send/self, send meta, getters and setters. Note re Self and uniformity of
+call to compute vs key lookup: yes, Self attempts to be uniform, so from its point
+of view there is no difference between looking up a constant value on the table or
+"invoking" a proc stored under key to compute something, however this is not Self
+and we want to be true to Racket. With Lisp syntax e.g. for function application,
+I see little value in such forced uniformity. That said we could provide similar
+behavior by default simply by way of predefining initial ~get~, ~send~,
+~send/self~ to test if the keyed value is a procedure and simply return it if it
+isn't. It is cute, but ultimately more confusing, I think. First, know your data.
+Second, if it is value you want just use ~get~ - implicit behavior is evil when
+you have to reason how the language is going to interpret your command. Avoid!
+
+After some thinking I realize that even Clojure multiple dispatch that performs
+ad-hoc parameter combination may not be general enough. That is because it leaves
+stuff implicit like the isa relationship it uses. That's true of any kind of
+dispatch IMO. However, if we fully reify every dispatch pushing it to conclusion I
+think we'll arrive at ... rules engines, datalog or prolog style facts and pattern
+matching on those. Seriously. Btw, even without squinting tables are nothing more
+than bags of facts (table - attribute - value triples). Shouldn't we then go all
+out, do datalog "dispatch" with other types of dispatch being but its subsets,
+which naturally we'd want to optimize? With rules engines multiple rules may match
+and fire, but with multimethods we want to induce some order: most specific to
+least specific and if required allow to call-next-method. I think datalog style
+dispatch allows for the most natural disambiguation strategy possibly at the cost
+of expensive computation:
+- each method matches on the set of facts,
+- methods may only ever relate by implication, that is one method's set of facts
+  is a strict subset of another so it is implied by the other, with the other
+  being more specific (so it comes first),
+- naturally, two methods (their fact-set) maybe implied by another method yet have
+  no obvious relationship and therefore way to prefer one over the other. This
+  should be an error to be resolved by introducing more facts into {f2} and/or
+  {f3} until they become exclusive of one another.
+
+         -- {f2}
+   {f1}<
+         -- {f3}
+
+*** TODO Metatable (aka prototype) dispatch
+
+Our base - bread and butter - dispatch: follow prototype chain until key or method
+is found.
 
 *** TODO <generic> metatable for Nth arg metatable dispatch
 
@@ -650,49 +826,7 @@ CLOSED: [2019-05-21 Tue 12:25]
 
 If we are to allow relations other than isa we'll probably need this.
 
-** Constructing tables
-
-CLOS and MOP in general instantiate via a generic that dispatches an the symbolic
-name of a class. I see no compelling reason to do the same with tables.
-
-{Meta entry ...} uses Meta that's bound to some table, which CLOS has to compute
-from the symbolic name. If we need to programmatically instantiate tables from a
-metatable it's as easy as (mt-value:new {init-table}). If we want to create a
-metatable that "inherits" from Meta, it's as simple as (set-metatable! mt Meta).
-Why have that symbolic name in the first place? I don't like having to store a
-global table of all tables somewhere in the sky. We could definitely do it if we
-ever need. Basically, I'd rather just stick with Racket object identity or ~isa~
-identity.
-
-Essentially, the equivalent of CLOS's ~make-instance~ is ~mt:new~ method or
-whatever we end up calling it.
-
-CLOS's ~make-instance~ does no real work other than lookup the class metaobject by
-symbol and delegate to it, the latter again does nothing but call generic
-~initialize-instance~ that does slot assignment. We can do all of that and more in
-~mt:new~ method, no need to protocolize, IMO. Any re-initialization of a table
-amounts to either setting and dropping its slots via standard means, or defining a
-method e.g. ~mt:reinit~ to do it in bulk or whatever. Ditto, for ~change-class~,
-just swap out the metatable. Well, we may want to allow custom work if metatable
-ever changes, hm. Maybe ~set-metatable!~ ought to be a table generic, too? I think
-it could work. Just have the default on the base ~metatable~. Most of the busy
-work that CLOS needs to do here amounts to diffing slot sets on the class before
-and after. We have it easy, since metatables are just tables, with their own
-slots, as soon as we swap an mt for another, its slots are available to the
-instance unless it shadows them with slots of the same name.
-
-** Printing and navigating
-
-Allow to control through a ~__print~ and ~__nav~ metamethod. Obviously, nav must
-be used by cooperating environment like a GUI table browser ala Smalltalk,
-simple GUI built into DrRacket or Emacs.
-
-Speaking of Nav it would be nice to allow modifying slots right there and then, so
-that e.g. as you debug you could tweak a metatable of a table of interest so that
-it say logs stuff etc. It'd be a cool hack. Making it essentially a live
-environment.
-
-** Slots
+** Thoughts on slots
 
 First it'd be interesting to disallow undefined as slot values in the table. Since
 we control the setter, IMO we could do it. Then implement something like ~(defined
@@ -735,7 +869,7 @@ Naturally, any slot value could itself be a table. It is possible for such slots
 to cooperate with getters, setters, etc of the table that holds the slots. So, yet
 another flexibility point.
 
-** Identity, eq?, isa, isa?
+** Thoughts on identity, eq?, isa, isa?
 
 Most natural here would probably be to treat table's mt as its identity. Since
 every table must after all have an identity we can either demand that every table
