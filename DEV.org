@@ -145,7 +145,39 @@ candidates are setters, converters (as), printers, getters, etc (see Swindle's
   ;; where <string> is bound to string-metatable
 #+end_src
 
-** Defining and constructing tables
+** Metamethods
+
+Consider :<method-name> as convention:
+- :<get>
+- :<insert>
+- :<setmeta>
+- :<proc>
+- maybe <set>
+- maybe <isa> defaults to returning metatable
+- maybe <isa?> defaults to testing against metatables in the chain
+
+Why have <isa> and <isa?> as metatables? Well, among other things we allow
+multiple inheritance, so the question of identity can no longer be trivially
+answered. While we can provide default implementations that would cover most cases
+(including the default implementation of multiple inheritance), in the end users
+must be final arbiters and suppliers of definitions since they are the ones being
+creative with semantics.
+
+** TODO gen:dict interface for tables
+
+to serve as "raw" operations - the kind that only works on the main contained and
+is oblivious to metatables and inheritance. Think ~rawget~ and ~rawset~ in Lua.
+
+** TODO Basic dispatch
+
+Inspired by Lua but instead of ~__index~ indirection a-la Lua we lookup missing
+key in the metatable unless :get metamethod is defined, then we call it passing
+self. To make sure we don't lose any flexibility that Lua semantics affords we
+could also allow setting :<get> to a table, in which case it would perform a
+lookup there. I don't think it adds anything beyond what a function could do, but
+hey why not.
+
+** TODO Table constructors
 
 *** Thoughts on constructors
 
@@ -178,7 +210,25 @@ and after. We have it easy, since metatables are just tables, with their own
 slots, as soon as we swap an mt for another, its slots are available to the
 instance unless it shadows them with slots of the same name.
 
-*** TODO Specing expected slots in the metatable
+*** TODO Expand {<metatable>} constructor into #%table
+
+Expand into ~#%table~, which we expose and let the user override.
+
+#+begin_src racket
+(define t {<metatable> #:kw1 opt1 #:kw2 opt2 (key val) ...})
+;; =>
+(#%table ...)
+#+end_src
+
+Default #%table semantics then is this:
+1. create a fresh table with any slots passed,
+2. set its metatable to <metatable>
+3. call (t:<setmeta>) metamethod
+
+Anyone can simply redefine #%table to obtain different semantics that wouldn't
+break any other code! So, we haven't lost flexibility yet gained robustness!
+
+*** TODO #:spec or #:declare keyword argument in {<mt>}
 
 Even if only for "in-code" documentation. Note we are specing slots for the
 instance not the metatable. If we wanted them to be present on the metatable we'd
@@ -222,94 +272,24 @@ itself then signals a required slot. This is certainly more verbose, though.
   ;; making :foo required, but :bar optional - must be natural if defined
 #+end_src
 
-*** TODO Expand {<metatable>} constructor into #%table
-
-Expand into ~#%table~, which we expose and let the user override. This is in
-addition to overriding :new metamethod.
-
-#+begin_src racket
-(define t {<metatable> #:kw1 opt1 #:kw2 opt2 (key val) ...})
-;; =>
-(#%table ...)
-#+end_src
-
-** Base table methods
-
-rawget, rawset
-
-get, set
-
-send, send/self - which by default imply get, but get doesn't imply invocation.
-
-proc - table used as procedure, probably indirectly referenced from prop:proc?
-
-new
-
-as
-
-#+begin_src racket
-  (t:as <string>)
-  (: 42 :as <string>)
-#+end_src
-
 ** TODO . : .. :: syntax
 
-.  = send
-:  = send/self
-.. = sendmeta
-:: = sendmeta/self
+*** TODO t.key t:key t..key t::key syntax
 
-#+begin_src racket
-  (send          foo method . args)
-  (sendmeta      foo method . args)
-  (send/self     foo method . args)
-  (sendmeta/self foo method . args)
-
-  (send*          foo method . args)
-  (sendmeta*      foo method . args)
-  (send*/self     foo method . args)
-  (sendmeta*/self foo method . args)
-
-  (.  foo method . args)
-  (.. foo method . args)
-  (:  foo method . args)
-  (:: foo method . args)
-
-  (foo.method . args)
-  (foo..method . args)
-  (foo:method . args)
-  (foo::method . args)
-
-  (: n as <string>)
-  (: s as <float>)
-  (send/self s as <float>)
-  ;; =>
-  (if (or (table? s) (dict? s))
-      ((get s as) s <float>)
-      (as s <float>))
-#+end_src
-
-*** TODO Expose #%. and #%.id
+*** TODO Expose #%. syntax
 
 Expose dot and colon identifier notation, so users may override it in their
 lang/tables: we could wrap relevant syntax in #%.id #%:id #%..id #%::id. Could
 push it even further and allow user-defined separators.
 
 #+begin_src racket
-  (#%. "." . args)
-  (#%. ".." . args)
-  (#%. ":" . args)
-  (#%. "::" . args)
-
   (#%.id "." . args)
   (#%.id ".." . args)
   (#%.id ":" . args)
   (#%.id "::" . args)
 #+end_src
 
-*** TODO t.key t:key t..key t::key
-
-*** TODO [#C] . and : in app position
+*** TODO [#C] . and : operators in app position
 
 Both receiver and slot can be computed. This is about the only reason to have this
 particular feature. We could simply replace it with (send ...).
@@ -325,7 +305,7 @@ them with ~apply~? Something like this would do the trick, but seems frivolous:
   (f a b . rest-id)
 #+end_src
 
-** TODO Table type must be able "to Racket"
+** TODO Make tables "Racket first-class"
 
 Being "first class" isn't enough, tables must embrace the Racket ecosystem. That
 is we should allow "deriving" new table struct types.
@@ -436,72 +416,92 @@ to generalize this. To use your analogy I'd like to find out if there's a way to
 "leave the hood open" in a clean way or at least let the user do the "passthrough"
 trick without the need to dismantle the entire car.
 
-** TODO Replace rawget/set with gen:dict or gen:associative
+** TODO <tables> for multiple inheritance
 
-dict-ref, dict-set or get:, set:
-
-gen:dict interface to act strictly upon the table container itself with no regard
-for metatables etc, this completely replaces raw operations like ~rawget~ or
-~rawset~.
-
-** TODO Basic Lua-style dispatch as gen:table
-
-get, set, proc, send, send/self, etc
-
-gen:lua or gen:table interface should probably mirror gen:dict but implement Lua
-metatable semantics. I think this maybe enough to bootstrap the MTP? Having these
-won't hurt, but I suspect that techincally I may not even need gen:dict for
-bootstrapping and should be able to define everything in terms of gen:lua?
-
-NOTE The use of Racket generics is not really necessary here, we could just as
-easily implement each of those functions, in fact maybe we should?
-
-Additionally for every table: (meta t) and (proc t) return metatable and procedure
-accordingly; with setf we could also set those.
-
-
-Table generic (mt dispatch) amounts to:
+Here's how a basic lookup in presence of multiple inheritance may look like. Note
+this does not answer how method invocation with method combination might work.
 
 #+begin_src racket
-  (define mt {metatable})
-  (define t {mt ('key 'val)})
+  (define <mts> {<tables> (:parent1 <t1>)
+                          (:parent2 <t2>)})
+  ;; constructor does 3 things:
+  ;;
+  ;; 1. creates fresh table with any slots passed,
+  ;; 2. sets meta of <mts> to <tables>
+  ;; 3. calls (<mts>:setmeta) metamethod
+  ;;
+  ;; Now, if we can define setmeta on <tables> that would perform any
+  ;; post-instantiation work e.g. adding :get slot as per below to allow multimeta
+  ;; lookups.
 
-  ;; specialize meth to any table that (isa? table mt)
-  (define/table (mt:meth . args) . body)
+  ;; At least two possible solutions here:
 
-  ;; now this just works for any t, whose mt has a meth defined
-  (t:meth . args)
+  ;; v1: <setmeta>
+  (define/table (<tables>:<setmeta>)
+    (if (eq? (meta self) <tables>)
+        ;; do nothing to avoid this method when {<mts>} is called
+        self
+        ;; else add :get
+        (set self :<get> <tables>.<get>)))
+
+  ;; v2: <setmeta> simply replace :<setmeta> in <mts> with noop
+  (define/table (<tables>:<setmeta>)
+    (set self :get <tables>.<get>)
+    (set self :setmeta identity))
+
+  ;; :<get> is fully dynamic, that is it makes no assumption about parents and
+  ;; instead looks them up every time its called.
+  (define/table (<tables>:<get> key)
+    (for/first ((parent (in-dict-values self))
+                #:when (not (undefined? (get parent key))))
+      (get parent key)))
+
+  ;; Assuming v1 <setmeta> constructing <mts> amounts to this
+  (define <mts> {<tables> (:parent1 <t1>)
+                          (:parent2 <t2>)})
+  ;; pseudocode =>
+  {(:parent1 <t1>)
+   (:parent2 <t2>)
+   (:<get> <tables>.<get>)
+   #:meta <tables>}
+
+  ;; What's cool here is that user can trivially replace :<get> with their own
+  ;; lookup. Add and remove parent tables - shrinking or growing inheritance chain
+  ;; dynamically.
+
+  ;; Finally when we instantiate <mts> we get
+  (define mts {<mts> (:bar 1)})
+  ;; pseudocode =>
+  {(:bar 1)
+   #:meta {(:parent1 <t1>)
+           (:parent2 <t2>)
+           (:<get> <tables>.<get>)
+           #:meta <tables>}}
 #+end_src
 
-** TODO Multiple inheritance with <tables> metatable
+*** NOTE on method combinations (:before, :after, call-next-method)
 
-Prototype precedence probably by overriding +gen:table+ (nope, can't be Racket
-generics, cause we are not redefining tables, just using a different mt, so ought to be
-changing metatable methods or multimethods) methods, call-next-method or send-next
-bound within method's body, :before and :after combinations.
+Things like :before :after next-method? and call-next-method are not part of
+multiple-inheritance lookup mechanism although it may appear so. They are part of
+dispatch mechanism, for which multiple inheritance defines an isa? hierarchy. Need
+for combinations arise from ambiguity when multiple methods match during dispatch
+and you need to pick e.g. most specific one etc.
 
-May call for <method> metatable for methods.
+I mean we could conceivably have a :<getmethod> metamethod mechanism that would
+fire on e.g. dot syntax ~t:meth~. It would let you combine methods, but its
+semantics are not clear and would probably be so convoluted as to be utterly
+hopeless.
+
+So for now at least lets keep multiple inheritance lookup separate from dispatch
+and method combinations. Multiple inheritance gives us very clear and precise
+semantics for simple method lookup and precedence.
+
+*** TODO isa, isa? and identity in multiple inheritance
+
+Now questions of identity and subtyping. Need to review this part. Leaning towards
+having :<isa> and :<isa?> as metamethods.
 
 #+begin_src racket
-  ;; We assume here that there is a base metatable, that is a prototype of every
-  ;; table. But also there is a base multi-metatable to store multiple metatables
-  ;; for when a table wants to "inherit" from multiple metatables.
-  ;;
-  ;; Multi-metatable's mt is base metatable, naturally, but it has to override the
-  ;; lookup (i.e. __index) at the minimum, so that the lookup may follow a strategy
-  ;; of checking multiple metatables. multi-metatable will provide the most obvious
-  ;; one either depth-first or breadth first or whatever, but nothing stopos us from
-  ;; overriding that strategy multi-metatable descendants.
-
-  (define MultiProto {multi-metatable
-                      (:mta {some-meta-table})
-                      (:mtb {some-other-meta-table})
-                      ...
-                      :isa? isa-pred?})
-
-  (define t {MultiProto (:slota 'foo)
-                        (:slotb 'bar)})
-
   ;; 1. -------------------------------------------------------------------
   ;; where isa-pred? could be one where we assume outside generic functions
   (defmethod (isa? (t table) mt)
@@ -548,26 +548,6 @@ May call for <method> metatable for methods.
   (define/table new-mt:self new-mt)
 
 #+end_src
-
-** Reflection
-
-Becomes really important and needs to permeate every design decision. What we have
-is an extensive graph or mesh of tables, which the user may need to observe to
-debug things.
-
-Every table will already have direct links to its metatables, but we may also want
-to have backlinks: metatable to its descendants. These would probably need to weak
-links for GC to work.
-
-Multiple dispatch with /isa/ and /implies/ must have reflective features, so that
-we maybe able to see method values registered, maybe even query for uncovered
-values when the match isn't exhaustive. I doubt we could do this in general, but
-if dispatch value and method values are "boolean" tables, then we might? Or more
-generally they may need to be in a form amenable to datalog or prolog unification
-or SMT. /prolog/ (or datalog) approach is particularly interesting, because
-reflection then amounts to querying "in reverse" of the dispatch or maybe letting
-you specify custom queries. In fact this may mean that we may need both SMT and
-/prolog/: former for dispatch, latter for reflection?
 
 ** Multiple dispatch
 
@@ -675,12 +655,7 @@ of expensive computation:
    {f1}<
          -- {f3}
 
-*** TODO Metatable (aka prototype) dispatch
-
-Our base - bread and butter - dispatch: follow prototype chain until key or method
-is found.
-
-*** TODO <generic> metatable for Nth arg metatable dispatch
+*** TODO <generic> dispatch
 
 Could either be its own implementation or a specialization of <multi> metatable /isa/
 dispatch with applicable optimisations.
@@ -693,9 +668,127 @@ At the very minimum we may assume that:
 
 Is the above correct?
 
-**** TODO Predefined <generic> methods e.g. get, set
+**** <generic> dispatch v1 (internal to tables)
 
-Generic get and set
+#+begin_quote
+Dispatch described here requires that relevant methods are added to relevant
+metatables, making it invasive and "local" to tables - very much a prototype
+dispatch. Our <generic> effectively defines a hierarchy of metatables.
+#+end_quote
+
+Here's an example, but I wonder if allowing to dispatch on Nth rather than juts
+the first argument is really worth it. It maybe worth implementing first arg
+dispatch to see if the below idea even works.
+
+#+begin_src racket
+  ;; where <generic> has :proc that
+  ;;
+  ;; - toposorts :method values found on inheritance chain of the table passed (d),
+  ;; - combines these methods nesting in instances of <generic-method>
+         {<generic-method>
+          (:next-method {<generic-method>
+                         (:next-method {<generic-method> ...})
+                         (:<proc> second-most-specific-method)})
+          (:<proc> most-specific-method)}
+  ;; - mixes in the table past with that combination (how?)
+  ;;
+  ;; This combined method effectively is a list of :next-method by specificity that
+  ;; can be looked up on self. Because it has the original table mixed in, its
+  ;; contents is also available on self. This ensures that we can still call :meth
+  ;; as a simple table method if we wanted to as well as a generic. Simplest and
+  ;; least convoluted case of course is when we dispatch on the first argument.
+  (define meth {<generic> (:method :meth)
+                          ;; dispatch on d, if no :dispatch assume dispatching on
+                          ;; the first argument
+                          (:dispatch (λ (self a b #:kw c d) d))
+                          ;; either specify how to toposort
+                          (:sort (λ (table) (topsorted list of metatables
+                                                       (in table's table chain))))
+                          ;; or function to compare metatable precedence
+                          (:comp (λ (mta mtb) (return args sorted in order of
+                                                      precedence)))})
+
+  ;; say we have the following metatables defined
+  (define <a> {<table> (:meth (λ (self a b #:kw c d) (push 'a (get d :vals))))})
+  (define <b> {<b> (:meth (λ (self a b #:kw c d)
+                            ;; calls <a>.meth
+                            (when self.next-method
+                              ;; bit of ugliness here, notice the . not : that is
+                              ;; because it will effectively turn into a table in
+                              ;; app position, which turns into table:<proc> call,
+                              ;; so in it self will be bound to table, which is what
+                              ;; we want. Alternative solution would be to have
+                              ;; <generic-method>:<proc> defined so that it ignores
+                              ;; the first argument, then we could use
+                              ;; self:next-method, which feels more consistent.
+                              (self.next-method a b #:kw c d))
+                            ;; should result in ('b 'a)
+                            (push 'b (get d :vals))))})
+  ;; assume <d> is <tables> of <c> and <b> in that order i.e.
+  ;;
+  ;;       |<c>|
+  ;; <d> <
+  ;;       |<b>|
+  ;;
+  ;; c pushes 'c but first delegates to next-method, like 'b
+  ;; d pushes 'd but first delegates to next-method, like 'b and 'c
+#+end_src
+
+Of course instead of being clever we could simply demand that every generic method
+must be <generic-method> whose :<proc> is the body of the method. Of course we
+would provide some syntactic sugar. Better yet, we could allow both, then the
+dispatch would only need to check if method isa <generic-method> and avoid
+wrapping it as one.
+
+#+begin_src racket
+  (define meth {<generic> (:method :meth)
+                          ;; dispatch on d
+                          (:dispatch (λ (self a b #:kw c d) d))})
+
+  ;; this looks consitent with (define (t:method ...) ...).
+  (defgeneric (tb:meth a b #:kw c d)
+    (when self.next-method
+      (self:next-method a b #:kw c d))
+    (push 'b (get d :vals)))
+#+end_src
+
+only concern in this syntax is that this would instantiate from the default
+generic method, but what if user wants to install their extension of
+<generic-method>? One solution is for ~defgeneric~ to accept relevant metatable as
+keyword arg, say #:as or #:meta or #:<generic-method>. Another is to not bother
+and let the user define their own sugar e.g. ~defmygeneric~.
+
+**** <generic> dispatch v2 (external to tables)
+
+Alternative to v1 is to encapsulate all methods in the <generic> instance, that is
+adding a method for <t> amounts to setting <t> key in <generic> instance to a
+function. This avoids touching metatables, but raises a question of hierarchy,
+since now on dispatch we have to isa? compare dispatch value with keys in our
+<generic> instance, collect and combine all that agree. While at least the default
+v1 dispatch imposes a hierarchy by following the metatable inheritance chain?
+Although, I'm still fuzzy about what exactly that "following the chain" means.
+Still, I bet we could implement similar default dispatch in v2.
+
+#+begin_src racket
+  (define meth {<generic> (:dispatch (λ (self a b #:kw c d) d))
+                          (:sort foo)
+                          (:comp bar)
+                          (:<proc> proc)})
+
+  (defgeneric (meth:<t> a b #:kw c d)
+    (when self.next-method
+      (self:next-method a b #:kw c d))
+    (push 't (get d :vals)))
+  ;; =>
+  (set meth <t> (λ (self a b #:kw c d)
+                  (when self.next-method
+                    (self:next-method a b #:kw c d))
+                  (push 't (get d :vals))))
+#+end_src
+
+**** TODO Any convenient <generic> methods we should predefine?
+
+For instance could ~get~ and ~set~ be generic? Would it be worth it?
 
 #+begin_src racket
 ;; Also, consider allowing #:fail in get and set
@@ -813,6 +906,26 @@ Here's how it might work:
 - we resolve ambiguities by pairwise implies? over method values,
 
 Could we pre-sort registered method values by implication?
+
+** Reflection
+
+Becomes really important and needs to permeate every design decision. What we have
+is an extensive graph or mesh of tables, which the user may need to observe to
+debug things.
+
+Every table will already have direct links to its metatables, but we may also want
+to have backlinks: metatable to its descendants. These would probably need to weak
+links for GC to work.
+
+Multiple dispatch with /isa/ and /implies/ must have reflective features, so that
+we maybe able to see method values registered, maybe even query for uncovered
+values when the match isn't exhaustive. I doubt we could do this in general, but
+if dispatch value and method values are "boolean" tables, then we might? Or more
+generally they may need to be in a form amenable to datalog or prolog unification
+or SMT. /prolog/ (or datalog) approach is particularly interesting, because
+reflection then amounts to querying "in reverse" of the dispatch or maybe letting
+you specify custom queries. In fact this may mean that we may need both SMT and
+/prolog/: former for dispatch, latter for reflection?
 
 ** Metatable hierarchies
 
