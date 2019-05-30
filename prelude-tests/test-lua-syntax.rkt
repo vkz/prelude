@@ -1,4 +1,4 @@
-#lang prelude/tables
+#lang prelude/lua
 
 (require prelude/testing
          syntax/macro-testing)

@@ -526,7 +526,7 @@
       (test-thunk)
       ...))
 
-  (run-provided-tests #:in prelude-tests/test-table-syntax
+  (run-provided-tests #:in prelude-tests/test-lua-syntax
                       run-basic-table-tests
                       run-define/table-tests
                       run-simple-inheritance-tests
@@ -538,11 +538,11 @@
 
 
 (module reader syntax/module-reader
-  prelude/tables-lang)
+  prelude/lua-lang)
 
+;; TODO way to deal with . .. : :: operators in the reader
 
 (comment
- ;; TODO way to deal with . .. : :: operators in the reader
  (define parse-lp
    (case-lambda
      ((char port)
@@ -579,6 +579,22 @@ eof
   (read))
 ;; comment
 )
+
+
+(comment
+ (module reader syntax/module-reader
+   prelude/tags-lang
+   #:wrapper1 (λ (th)
+                (parameterize ((current-readtable (readtable/tags)))
+                  (th)))
+
+   (define parse-tag ..body..)
+
+   (define (readtable/tags)
+     (make-readtable (current-readtable)
+                     #\k 'dispatch-macro parse-tag)))
+ ;; comment
+ )
 
 
 ;;* Notes -------------------------------------------------------- *;;
