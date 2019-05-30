@@ -4,7 +4,7 @@ PRELUDE  -*- mode: org; fill-column: 82 -*-
 #+seq_todo: TODO STARTED(s@/@) WAITING(w@/@) DELEGATED(l@/@) APPT | DONE(d@/@) DEFERRED(f@/@) CANCELLED(x@/@) IDEA(i/@)
 #+TAGS: { SCHOOL(s) BLOG(b) TIL(t) }
 #+PROPERTY: Effort_ALL 0 0:10 0:30 1:00 2:00 3:00 4:00 5:00 6:00 7:00
-#+COLUMNS: %40ITEM(Task) %17Effort(Estimated Effort){:} %CLOCKSUM
+#+COLUMNS: %30ITEM(Task) %CLOCKSUM %15Effort(Effort){:}
 
 * Prelude
 
@@ -163,14 +163,28 @@ answered. While we can provide default implementations that would cover most cas
 must be final arbiters and suppliers of definitions since they are the ones being
 creative with semantics.
 
-** TODO gen:dict interface for tables
+** DONE gen:dict interface for tables
+CLOSED: [2019-05-30 Thu 15:09]
+- State "DONE"       from "STARTED"    [2019-05-30 Thu 15:09] \\
+  Implemented gen:dict, which means gen:associative works and therefore get: and
+  set: work too.
+- State "STARTED"    from "TODO"       [2019-05-30 Thu 15:08]
+:LOGBOOK:
+CLOCK: [2019-05-30 Thu 15:08]--[2019-05-30 Thu 15:09] =>  0:01
+:END:
 
 to serve as "raw" operations - the kind that only works on the main contained and
 is oblivious to metatables and inheritance. Think ~rawget~ and ~rawset~ in Lua.
 
 ** TODO Basic metatable semantics
 
-*** TODO default <get> metamethod semantics
+*** DONE default <get> metamethod semantics
+CLOSED: [2019-05-30 Thu 16:14]
+- State "DONE"       from "STARTED"    [2019-05-30 Thu 16:14]
+- State "STARTED"    from "TODO"       [2019-05-30 Thu 15:28]
+:LOGBOOK:
+CLOCK: [2019-05-30 Thu 15:28]--[2019-05-30 Thu 16:14] =>  0:46
+:END:
 
 Inspired by Lua but instead of ~__index~ indirection a-la Lua we lookup missing
 key in the metatable unless :get metamethod is defined, then we call it passing
@@ -179,7 +193,31 @@ could also allow setting :<get> to a table, in which case it would perform a
 lookup there. I don't think it adds anything beyond what a function could do, but
 hey why not.
 
-*** TODO default <insert> metamethod semantics
+*** DONE default <insert> metamethod semantics
+CLOSED: [2019-05-30 Thu 18:08]
+- State "DONE"       from "STARTED"    [2019-05-30 Thu 18:08] \\
+  Added tests.
+- State "STARTED"    from "TODO"       [2019-05-30 Thu 17:57]
+- State "TODO"       from "STARTED"    [2019-05-30 Thu 17:41] \\
+  Implemented ~set~. Need to add tests.
+- State "STARTED"    from "TODO"       [2019-05-30 Thu 16:15]
+:LOGBOOK:
+CLOCK: [2019-05-30 Thu 17:57]--[2019-05-30 Thu 18:08] =>  0:11
+CLOCK: [2019-05-30 Thu 16:15]--[2019-05-30 Thu 17:41] =>  1:26
+:END:
+
+Implementing <insert> metamethod I made an interesting observation re the
+semantics of metamethods. Metamethod is only ever looked up on the metatable
+proper not its inheritance chain. Effectively:
+#+begin_src racket
+  ;; Lua equivalent of rawget
+  (dict-ref (table-meta t) :<insert>)
+#+end_src
+that is what Lua does, too, and unless I'm mistaken my first Lua table
+implementation does the wrong thing - it looks for metamethod on the entire
+metachain. I wonder if such semantics would be interesting. Technically, we could
+implement something like it simply by setting <insert> or any other metamethod for
+that matter to a procedure that does the deep metachain lookup for <insert>.
 
 *** TODO default <proc> metamethod semantics
 

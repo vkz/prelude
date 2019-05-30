@@ -39,8 +39,9 @@
      (if (hash-has-key? (lua-table dict) key)
          (hash-ref (lua-table dict) key)
          (if (lua-meta-table dict)
-             ;; TODO better convention for predefined metakeys is :<index> inline
-             ;; with metatable naming convention <table>
+             ;; TODO I think this is a bug. Notice that this will traverse the
+             ;; entire metatable chain to find __index. Or maybe that's the whole
+             ;; point? How does Lua actually do that?
              (let ((index (dict-ref (lua-meta-table dict) '__index)))
                (cond ((lua? index)
                       (dict-ref index key))
