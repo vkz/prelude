@@ -168,7 +168,9 @@ creative with semantics.
 to serve as "raw" operations - the kind that only works on the main contained and
 is oblivious to metatables and inheritance. Think ~rawget~ and ~rawset~ in Lua.
 
-** TODO Basic dispatch
+** TODO Basic metatable semantics
+
+*** TODO default <get> metamethod semantics
 
 Inspired by Lua but instead of ~__index~ indirection a-la Lua we lookup missing
 key in the metatable unless :get metamethod is defined, then we call it passing
@@ -176,6 +178,22 @@ self. To make sure we don't lose any flexibility that Lua semantics affords we
 could also allow setting :<get> to a table, in which case it would perform a
 lookup there. I don't think it adds anything beyond what a function could do, but
 hey why not.
+
+*** TODO default <insert> metamethod semantics
+
+*** TODO default <proc> metamethod semantics
+
+*** TODO default <isa?> metamethod semantics
+
+This is to test for "subtyping" essentially:
+#+begin_src racket
+  (t:<isa?> <foo>)
+#+end_src
+
+Reason we care about that is because metatables like <tables> (multiple
+inheritance) combine multiple metatables, so answering an <isa?> question is no
+longer straightforward. However IMO <isa> should always simply return the
+metatable, maybe?
 
 ** TODO Table constructors
 
@@ -210,15 +228,7 @@ and after. We have it easy, since metatables are just tables, with their own
 slots, as soon as we swap an mt for another, its slots are available to the
 instance unless it shadows them with slots of the same name.
 
-*** TODO Expand {<metatable>} constructor into #%table
-
-Expand into ~#%table~, which we expose and let the user override.
-
-#+begin_src racket
-(define t {<metatable> #:kw1 opt1 #:kw2 opt2 (key val) ...})
-;; =>
-(#%table ...)
-#+end_src
+*** TODO default #%table constructor semantics
 
 Default #%table semantics then is this:
 1. create a fresh table with any slots passed,
@@ -228,7 +238,17 @@ Default #%table semantics then is this:
 Anyone can simply redefine #%table to obtain different semantics that wouldn't
 break any other code! So, we haven't lost flexibility yet gained robustness!
 
-*** TODO #:spec or #:declare keyword argument in {<mt>}
+*** TODO Expand {<metatable>} syntax into #%table
+
+Expand into ~#%table~, which we expose and let the user override.
+
+#+begin_src racket
+(define t {<metatable> #:kw1 opt1 #:kw2 opt2 (key val) ...})
+;; =>
+(#%table ...)
+#+end_src
+
+*** TODO Allow #:spec or #:declare keyword arguments in constructors
 
 Even if only for "in-code" documentation. Note we are specing slots for the
 instance not the metatable. If we wanted them to be present on the metatable we'd
@@ -274,9 +294,7 @@ itself then signals a required slot. This is certainly more verbose, though.
 
 ** TODO . : .. :: syntax
 
-*** TODO t.key t:key t..key t::key syntax
-
-*** TODO Expose #%. syntax
+*** TODO Implement default #%. accessor semantics
 
 Expose dot and colon identifier notation, so users may override it in their
 lang/tables: we could wrap relevant syntax in #%.id #%:id #%..id #%::id. Could
@@ -289,7 +307,26 @@ push it even further and allow user-defined separators.
   (#%.id "::" . args)
 #+end_src
 
-*** TODO [#C] . and : operators in app position
+*** TODO Expand t.key t:key t..key t::key syntax into #%.
+
+*** TODO Extend . and :: syntax to builtins
+
+Amounts to checking the metatable of the receiver:
+- usual if its a table already,
+- substitute respective <mt> if built in type.
+
+Example:
+
+#+begin_src racket
+  (define num 42)
+  (num:as <string>)
+  ;; => checks if num is a table. Since it isn't obtain its most specific metatable
+  ;; which in this case is <integer> or maybe <natural> and wrap?
+  (define wrapped-num {<natural> (:builtin 42)})
+  (wrapped-num:as <string>)
+#+end_src
+
+*** TODO [#C] Allow . and : operators in app position
 
 Both receiver and slot can be computed. This is about the only reason to have this
 particular feature. We could simply replace it with (send ...).
@@ -305,118 +342,9 @@ them with ~apply~? Something like this would do the trick, but seems frivolous:
   (f a b . rest-id)
 #+end_src
 
-** TODO Make tables "Racket first-class"
-
-Being "first class" isn't enough, tables must embrace the Racket ecosystem. That
-is we should allow "deriving" new table struct types.
-
-Put differently user must be able to define a new table struct that otherwise like
-tables but might implement some extensions allowed by Racket struct interface.
-
-Motivation: Racket struct offers some truly powerful machinery that permeates
-Racket ecosystem, so it only makes sense that we should let <table> users to make
-good use of it, too. That is to say that prototypes as extension fascilities are
-powerful but aren't enough, since they are mostly oblivious to what Racket
-provides. Here's a motivating example: there is no way atm to treat tables as
-synchronizable events. To get that we'd have to add ~prop:evt~ to the table
-struct, but then it would make every table into an event, which maybe too much.
-Even assuming we are ok with every table doubling as an event, we'd have to
-program a way to customize what tables return on sync since this isn't "one size
-fits all" - users may want different things of them. Sadly, this opens a pandora
-box. Not only would we be reinventing stuff Racket structs already do well, but
-we'd also have to write documentation for that.
-
-My preferred solution would be, in addition to prototype or whatever other type of
-extension mechanism we have for table, to also allow extending them at struct
-level, that is we don't necessarily hide the fact that tables are structs. This
-has an obvious problem: struct inheritance doesn't buy us anything - struct
-extension isn't otherwise like its parent struct - that is the user would have to
-turn it back into a table by extending it some kind table protocol or other.
-
-We must make such extensions natural and boilerplate free. Every struct such
-extended must remain a table. Beats me how to do that.
-
-One way we might be able to do that is to assume that being a table amounts to
-implementing e.g. ~gen:dict~ and ~gen:table~ generic interfaces. Then we provide a
-e.g. ~table~ macro that is like ~struct~ macro i.e. expands into a subtype of
-table, that is table is the base type of this new table type, and that subtype
-implements relevant ~#:methods~. Those methods would have to delegate to the
-methods of the base type, that is of the original table. Constructors like
-~{<some-table>}~ would have to cooperate in that they must expand into a relevant
-generic method call.
-
-If we are going with a macro expanding into ~struct~ or ~define-struct~ it would
-pay to expand into ~define-struct/derived~ so that errors are reported in terms of
-the name user supplies rather than whatever struct syntax we expand into.
-
-*** DONE Ask the mailing list
-CLOSED: [2019-05-22 Wed 16:42]
-
-- State "DONE"       from "TODO"       [2019-05-22 Wed 16:42] \\
-  https://groups.google.com/forum/#!topic/racket-users/GZAtJzK47T4
-
-This would probably sound like rambling but that's only because I am struggling a
-little bit. I implemented a little language that offers its own compound data
-type: first class and users can extend it in various ways. Naturally, it is
-implemented as a Racket ~struct~. As I started using the language, it occured to
-me that I lost something and I'd very much like to get it back.
-
-Racket struct offers some truly powerful machinery that permeates Racket
-ecosystem. Here's a motivating example: having a new fancy first class compound
-(tm) datatype is nice and well, but what if I want it to double as a
-synchronizable event? Oops. I do facilitate extensions, but that's something that
-would need ~prop:evt~ on the underlying struct. I could "extend" my language and
-add this prop myself, but it isn't a given that every instance needs to be an
-event, not to mention there isn't "one size fits all" here, and the user may want
-to customize the result of synchronization, if they even want events at all. More
-generally though, how about other properties that may not even exist yet? Of
-course I could surgically extend my implementation and allow to customize those
-extensions etc. But that kind of opens pandora's box, not to mention most of the
-time it'll simply be a "passthrough" of what Racket structs can already do, and
-all of this nonsense would have to be documented - again why bother given the
-marvel that is Racket documentation?
-
-Conventional wisdom holds that you don't expose implementation details, but
-honestly I'm ok dispensing with the dogma in this case. It isn't obvious to me how
-to do that, though. Suppose, you derive a new stuct somehow: say, it implements
-~prop:evt~ but must otherwise be like your datatype. What does that mean? Struct
-inheritance isn't that - I know that much. It must be a protocol of some kind - a
-set of functions and what not (behaviors, really) that make your fancy datatype
-what it is. One possible solution is Racket generics that is assuming we can
-capture the essence of our type as a set of methods. Suppose for a moment, that we
-could. While the underlying implementation may have changed and become either
-richer or more constrained, it should still act as our fancy datatype. Since
-Racket generics don't delegate to base types, are we to demand that the user
-extends the interface to the struct that is nothing but a wrapper around another
-struct that already implements said interface? That's asking too much IMO.
-
-Is the answer to offer a macro that expands into something like
-
-  (struct extended-type fancy-type () #:methods gen:fancy-iface ...)
-
-where I suspect fancy-iface methods don't need to change at all between macro
-invocations?
-
-This can't be a new problem. Any thoughts or advice?
-
-*** reply to Greg
-
-#+begin_quote
-p.s. While you "have the hood open", you might also want to do something
-similar for `prop:procedure`?
-#+end_quote
-
-I would agree that it is A solution to this particular problem with this
-particular prop. The "passthrough" of some form or other works well and is always
-open to me as the language maintainer but it amounts to special-casing things and
-making me the sole arbiter of what makes it into the language and what doesn't.
-Notice however that nothing about our fancy datatype changes, its interface
-remains the same, yet user gets a richer type. Which means there ought to be a way
-to generalize this. To use your analogy I'd like to find out if there's a way to
-"leave the hood open" in a clean way or at least let the user do the "passthrough"
-trick without the need to dismantle the entire car.
-
 ** TODO <tables> for multiple inheritance
+
+*** TODO constructor: <setmeta> metamethod semantics
 
 Here's how a basic lookup in presence of multiple inheritance may look like. Note
 this does not answer how method invocation with method combination might work.
@@ -479,24 +407,18 @@ this does not answer how method invocation with method combination might work.
            #:meta <tables>}}
 #+end_src
 
-*** NOTE on method combinations (:before, :after, call-next-method)
+*** TODO accessor: <get> metamethod semantics
 
-Things like :before :after next-method? and call-next-method are not part of
-multiple-inheritance lookup mechanism although it may appear so. They are part of
-dispatch mechanism, for which multiple inheritance defines an isa? hierarchy. Need
-for combinations arise from ambiguity when multiple methods match during dispatch
-and you need to pick e.g. most specific one etc.
+#+begin_src racket
+  ;; :<get> is fully dynamic, that is it makes no assumption about parents and
+  ;; instead looks them up every time its called.
+  (define/table (<tables>:<get> key)
+    (for/first ((parent (in-dict-values self))
+                #:when (not (undefined? (get parent key))))
+      (get parent key)))
+#+end_src
 
-I mean we could conceivably have a :<getmethod> metamethod mechanism that would
-fire on e.g. dot syntax ~t:meth~. It would let you combine methods, but its
-semantics are not clear and would probably be so convoluted as to be utterly
-hopeless.
-
-So for now at least lets keep multiple inheritance lookup separate from dispatch
-and method combinations. Multiple inheritance gives us very clear and precise
-semantics for simple method lookup and precedence.
-
-*** TODO isa, isa? and identity in multiple inheritance
+*** TODO identity: <isa?> metamethod semantics
 
 Now questions of identity and subtyping. Need to review this part. Leaning towards
 having :<isa> and :<isa?> as metamethods.
@@ -549,16 +471,171 @@ having :<isa> and :<isa?> as metamethods.
 
 #+end_src
 
+*** Thoughts on method combinations (:before, :after, call-next-method)
+
+Things like :before :after next-method? and call-next-method are not part of
+multiple-inheritance lookup mechanism although it may appear so. They are part of
+dispatch mechanism, for which multiple inheritance defines an isa? hierarchy. Need
+for combinations arise from ambiguity when multiple methods match during dispatch
+and you need to pick e.g. most specific one etc.
+
+I mean we could conceivably have a :<getmethod> metamethod mechanism that would
+fire on e.g. dot syntax ~t:meth~. It would let you combine methods, but its
+semantics are not clear and would probably be so convoluted as to be utterly
+hopeless.
+
+So for now at least lets keep multiple inheritance lookup separate from dispatch
+and method combinations. Multiple inheritance gives us very clear and precise
+semantics for simple method lookup and precedence.
+
+** TODO Make tables "Racket first-class"
+
+*** Thoughts about extending Racket struct underlying tables
+
+Being "first class" isn't enough, tables must embrace the Racket ecosystem. That
+is we should allow "deriving" new table struct types.
+
+Put differently user must be able to define a new table struct that otherwise like
+tables but might implement some extensions allowed by Racket struct interface.
+
+Motivation: Racket struct offers some truly powerful machinery that permeates
+Racket ecosystem, so it only makes sense that we should let <table> users to make
+good use of it, too. That is to say that prototypes as extension fascilities are
+powerful but aren't enough, since they are mostly oblivious to what Racket
+provides. Here's a motivating example: there is no way atm to treat tables as
+synchronizable events. To get that we'd have to add ~prop:evt~ to the table
+struct, but then it would make every table into an event, which maybe too much.
+Even assuming we are ok with every table doubling as an event, we'd have to
+program a way to customize what tables return on sync since this isn't "one size
+fits all" - users may want different things of them. Sadly, this opens a pandora
+box. Not only would we be reinventing stuff Racket structs already do well, but
+we'd also have to write documentation for that.
+
+My preferred solution would be, in addition to prototype or whatever other type of
+extension mechanism we have for table, to also allow extending them at struct
+level, that is we don't necessarily hide the fact that tables are structs. This
+has an obvious problem: struct inheritance doesn't buy us anything - struct
+extension isn't otherwise like its parent struct - that is the user would have to
+turn it back into a table by extending it some kind table protocol or other.
+
+We must make such extensions natural and boilerplate free. Every struct such
+extended must remain a table. Beats me how to do that.
+
+One way we might be able to do that is to assume that being a table amounts to
+implementing e.g. ~gen:dict~ and ~gen:table~ generic interfaces. Then we provide a
+e.g. ~table~ macro that is like ~struct~ macro i.e. expands into a subtype of
+table, that is table is the base type of this new table type, and that subtype
+implements relevant ~#:methods~. Those methods would have to delegate to the
+methods of the base type, that is of the original table. Constructors like
+~{<some-table>}~ would have to cooperate in that they must expand into a relevant
+generic method call.
+
+If we are going with a macro expanding into ~struct~ or ~define-struct~ it would
+pay to expand into ~define-struct/derived~ so that errors are reported in terms of
+the name user supplies rather than whatever struct syntax we expand into.
+
+*** TODO Add prop:evt to table struct
+
+*** TODO Implement struct-like macro that extends table struct
+
+Would essentially act as a Racket struct macro that inherits  from table struct.
+About the only thing it needs to do is passthrough any props, generic interfaces
+and struct fields supplied.
+
+Crux of the problem though is making the rest of tables machinery work with this
+extended version of a table. E.g. constructors must still work but would have to
+somehow be told which struct to use.
+
+*** TODO Test extending struct by adding interesting properties
+
+Candidates:
+- prop:input-port and prop:output-port,
+- prop:stream or prop:sequence,
+- ???
+
+*** TODO Test extending struct by implementing interesting gen interfaces
+
+*** DONE Ask the mailing list
+CLOSED: [2019-05-22 Wed 16:42]
+
+- State "DONE"       from "TODO"       [2019-05-22 Wed 16:42] \\
+  https://groups.google.com/forum/#!topic/racket-users/GZAtJzK47T4
+
+This would probably sound like rambling but that's only because I am struggling a
+little bit. I implemented a little language that offers its own compound data
+type: first class and users can extend it in various ways. Naturally, it is
+implemented as a Racket ~struct~. As I started using the language, it occured to
+me that I lost something and I'd very much like to get it back.
+
+Racket struct offers some truly powerful machinery that permeates Racket
+ecosystem. Here's a motivating example: having a new fancy first class compound
+(tm) datatype is nice and well, but what if I want it to double as a
+synchronizable event? Oops. I do facilitate extensions, but that's something that
+would need ~prop:evt~ on the underlying struct. I could "extend" my language and
+add this prop myself, but it isn't a given that every instance needs to be an
+event, not to mention there isn't "one size fits all" here, and the user may want
+to customize the result of synchronization, if they even want events at all. More
+generally though, how about other properties that may not even exist yet? Of
+course I could surgically extend my implementation and allow to customize those
+extensions etc. But that kind of opens pandora's box, not to mention most of the
+time it'll simply be a "passthrough" of what Racket structs can already do, and
+all of this nonsense would have to be documented - again why bother given the
+marvel that is Racket documentation?
+
+Conventional wisdom holds that you don't expose implementation details, but
+honestly I'm ok dispensing with the dogma in this case. It isn't obvious to me how
+to do that, though. Suppose, you derive a new stuct somehow: say, it implements
+~prop:evt~ but must otherwise be like your datatype. What does that mean? Struct
+inheritance isn't that - I know that much. It must be a protocol of some kind - a
+set of functions and what not (behaviors, really) that make your fancy datatype
+what it is. One possible solution is Racket generics that is assuming we can
+capture the essence of our type as a set of methods. Suppose for a moment, that we
+could. While the underlying implementation may have changed and become either
+richer or more constrained, it should still act as our fancy datatype. Since
+Racket generics don't delegate to base types, are we to demand that the user
+extends the interface to the struct that is nothing but a wrapper around another
+struct that already implements said interface? That's asking too much IMO.
+
+Is the answer to offer a macro that expands into something like
+
+  (struct extended-type fancy-type () #:methods gen:fancy-iface ...)
+
+where I suspect fancy-iface methods don't need to change at all between macro
+invocations?
+
+This can't be a new problem. Any thoughts or advice?
+
+**** my reply to Greg
+
+#+begin_quote
+p.s. While you "have the hood open", you might also want to do something
+similar for `prop:procedure`?
+#+end_quote
+
+I would agree that it is A solution to this particular problem with this
+particular prop. The "passthrough" of some form or other works well and is always
+open to me as the language maintainer but it amounts to special-casing things and
+making me the sole arbiter of what makes it into the language and what doesn't.
+Notice however that nothing about our fancy datatype changes, its interface
+remains the same, yet user gets a richer type. Which means there ought to be a way
+to generalize this. To use your analogy I'd like to find out if there's a way to
+"leave the hood open" in a clean way or at least let the user do the "passthrough"
+trick without the need to dismantle the entire car.
+
 ** Multiple dispatch
 
 I can think of at least 3 dispatch types - least generic to most generic:
-1. Metatable (prototype) dispatch,
-2. Single argument "type" (metatable) dispatch,
-3. Compute dispatch value for /isa/ multimethod dispatch,
-4. Compute dispatch value for /implies/ predicate dispatch.
+
+1. Metatable (prototype) dispatch - what we get as base,
+2. Generic single argument metatable dispatch (aka subtype dispatch),
+3. Multimethod "combined dispatch value" /isa/ dispatch,
+4. Multimethod "combined dispatch value" /implies/ dispatch.
+
+*** Thougts about dispatch
 
 At firts glance prototype dispatch is tied to tables, so it would pay to also
 offer /external/ methods. Both /isa/ and /implies/ dispatch are kindof that.
+Generics could be either external or internal (i.e. store methods on metatables).
 Methods should still be tables but with customized invocation procedures. That
 said, e.g. dot or colon notation isn't really that special. We could simply
 implement it as an cond-dispatch, that substitutes built-in types with their
@@ -575,6 +652,8 @@ need to read up on that. Things to think about:
 - or can we distill to RDF style tables and dispatch on them,
 - e.g. think datalog, prolog, rules engine (RETE), boolean functions, decision trees.
 
+**** What is /self/ in method body?
+
 Note there isn't always an obvious /self/ to bind in method body, since 2 and 3 can
 combine arguments to produce a dispatch value. So, an possibly interesting design could
 be binding /self/ to the multi-method instance, which would provide methods to query
@@ -587,17 +666,7 @@ application strategy. Obvious slots are: before, after and when.
 Sugar like ~defmethod~ should probably produce and install <method> instances on
 multimethod instances (e.g. on <generic> or <multi>).
 
-*** Thougts about dispatch
-
-One cool trick that works really well with multiple isa dispatch and prototypes is
-replacing table's prototype in a method, so that the next dispatch will choose
-different method altogether - this is very much life-like: you used to be young,
-but now you're old, so other methods apply. I really like it.
-
-Metatables already offer a form of generic methods without us doing anything.
-After all t:method is exactly that, and obviously that method may come from
-anywhere on the mt chain of t. I think we want to push this idea as far as it can
-go, and after that also provide generic functions that are not tied to tables.
+**** Naming things, uniformity in Self, random thoughts
 
 We need naming convention to avoid ambiguity when talking about generics:
 1. table generics to refer to table methods,
@@ -629,6 +698,8 @@ isn't. It is cute, but ultimately more confusing, I think. First, know your data
 Second, if it is value you want just use ~get~ - implicit behavior is evil when
 you have to reason how the language is going to interpret your command. Avoid!
 
+**** Arriving at /implies/ aka predicate dispatch
+
 After some thinking I realize that even Clojure multiple dispatch that performs
 ad-hoc parameter combination may not be general enough. That is because it leaves
 stuff implicit like the isa relationship it uses. That's true of any kind of
@@ -654,6 +725,18 @@ of expensive computation:
          -- {f2}
    {f1}<
          -- {f3}
+
+**** Trick: delegate by swapping metatable (or prototype)
+
+One cool trick that works really well with multiple isa dispatch and prototypes is
+replacing table's prototype in a method, so that the next dispatch will choose
+different method altogether - this is very much life-like: you used to be young,
+but now you're old, so other methods apply. I really like it.
+
+This maps onto "life events" or "evolution" or "stages of life and being" e.g.
+fish gets born, enconters a predator and gets injured, gets eaten or dies. All of
+these are "fish" but different stages of being one, makes sense to model by
+swapping or "evolving" its metatable or metastatus.
 
 *** TODO <generic> dispatch
 
