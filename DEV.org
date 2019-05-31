@@ -276,6 +276,18 @@ Default #%table semantics then is this:
 Anyone can simply redefine #%table to obtain different semantics that wouldn't
 break any other code! So, we haven't lost flexibility yet gained robustness!
 
+*** TODO Guard against undefined values in constructor
+
+This is the only way we can guarantee that undefined value doesn't sneak in. This
+may carry substantial costs though, so I'm not sure about the best way to proceed.
+
+One alternative is to make it a convention and simply say that its UB if you ever
+attempt set a slot to undefined. That doesn't sit well with me. However, we could
+provide a setting that lets you turn the check off in constructors but say not in
+~set~ once you go into production and made sure no undefine can ever occur in the
+constructor. Still pretty dangerous but maybe a reasonable trade-off a-la
+unchecked integer ops etc.
+
 *** TODO Expand {<metatable>} syntax into #%table
 
 Expand into ~#%table~, which we expose and let the user override.

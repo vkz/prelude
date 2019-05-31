@@ -1,17 +1,23 @@
 #lang prelude
 
+
 (require racket/struct
          racket/generic
          (for-syntax syntax/parse
-                     racket/match))
+                     racket/match)
+         ;; replace #%top with our implementation
+         (rename-in (only-in racket #%top) (#%top racket/#%top)))
+
+
+(provide (rename-out (#%top top)))
+
 
 (module+ test
   (require rackunit)
   (require prelude/testing))
 
 
-(require (rename-in (only-in racket #%top)
-                    (#%top racket/#%top)))
+;;* :tags -------------------------------------------------------- *;;
 
 
 (begin-for-syntax
@@ -19,6 +25,13 @@
     (pattern id:id
              #:when
              (regexp-match #px"^[:]\\S+" (symbol->string (syntax->datum #'id))))))
+
+(define (tag? t)
+  (and (symbol? t)
+       (string-prefix? (symbol->string t) ":")))
+
+
+;;* #%top -------------------------------------------------------- *;;
 
 
 (define-syntax (#%top stx)
@@ -29,10 +42,7 @@
     (_ (raise-syntax-error '#%top "invalid syntax in top"))))
 
 
-(provide table table-meta set-table-meta! table? (rename-out (#%top top)))
-
-
-;;* Table struct ------------------------------------------------- *;;
+;;* table struct ------------------------------------------------- *;;
 
 
 ;; NOTE Replace apply with keyword-apply if some dict method takes kw args
@@ -90,6 +100,11 @@
 ;;* <get> metamethod --------------------------------------------- *;;
 
 
+;; TODO Default table struct constructor doesn't check the values in the table, so
+;; it will happily allow undefined their. We'll have to disallow undefined in
+;; whatever constructor we end up providing.
+
+
 ;; TODO consider optional default proc argument?
 (define (get t key)
   (if (dict-has-key? t key)
@@ -97,13 +112,13 @@
       (if (table? (table-meta t))
           (let* ((mt (table-meta t))
                  (metamethod (dict-ref mt :<get>)))
-            (if metamethod
-                (cond
-                  ((table? metamethod) (get metamethod key))
-                  ((procedure? metamethod) (metamethod t key))
-                  ;; TODO should error here instead?
-                  (else undefined))
-                (get mt key)))
+            (if? metamethod
+                 (cond
+                   ((table? metamethod) (get metamethod key))
+                   ((procedure? metamethod) (metamethod t key))
+                   ;; TODO should error here instead?
+                   (else undefined))
+                 (get mt key)))
           undefined)))
 
 

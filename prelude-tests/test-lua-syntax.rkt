@@ -38,7 +38,7 @@
   ;; method of arity 0 with keyword args
   (void (checked (define/table (tbl:kwmeth0 #:key [key 'key]) (get: self key))))
   ;; method of arity > 0 with keyword args
-  (void (checked (define/table (tbl:kwmeth1 inc #:key [key 'key]) (+ inc (or (get: self key) 0)))))
+  (void (checked (define/table (tbl:kwmeth1 inc #:key [key 'key]) (+ inc (or? (get: self key) 0)))))
 
   ;; key lookup
   (check-eq? tbl.key 42)

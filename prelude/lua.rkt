@@ -38,21 +38,21 @@
   ((define (dict-ref dict key [default (λ () undefined)])
      (if (hash-has-key? (lua-table dict) key)
          (hash-ref (lua-table dict) key)
-         (if (lua-meta-table dict)
-             ;; TODO I think this is a bug. Notice that this will traverse the
-             ;; entire metatable chain to find __index. Or maybe that's the whole
-             ;; point? How does Lua actually do that?
-             (let ((index (dict-ref (lua-meta-table dict) '__index)))
-               (cond ((lua? index)
-                      (dict-ref index key))
+         (if? (lua-meta-table dict)
+              ;; TODO I think this is a bug. Notice that this will traverse the
+              ;; entire metatable chain to find __index. Or maybe that's the whole
+              ;; point? How does Lua actually do that?
+              (let ((index (dict-ref (lua-meta-table dict) '__index)))
+                (cond ((lua? index)
+                       (dict-ref index key))
 
-                     ((procedure? index)
-                      ;; TODO signal arity error if incorrect
-                      (index dict key))
+                      ((procedure? index)
+                       ;; TODO signal arity error if incorrect
+                       (index dict key))
 
-                     (else undefined)))
-             ;; no such key => undefined
-             undefined)))
+                      (else undefined)))
+              ;; no such key => undefined
+              undefined)))
 
    (define/generic super-dict-set!           dict-set!)
    (define/generic super-dict-has-key?       dict-has-key?)
@@ -80,21 +80,21 @@
              ;; when key present simply set it
              (super-dict-set! (lua-table dict) key v)
              ;; when key absent try __newindex metamethod first else set the key
-             (if (lua-meta-table dict)
-                 (let ((newindex (dict-ref (lua-meta-table dict) '__newindex)))
-                   (cond ((lua? newindex)
-                          ;; TODO __newindex is a table then set the key there, but
-                          ;; is that reasonable?
-                          (dict-set! newindex key v))
+             (if? (lua-meta-table dict)
+                  (let ((newindex (dict-ref (lua-meta-table dict) '__newindex)))
+                    (cond ((lua? newindex)
+                           ;; TODO __newindex is a table then set the key there, but
+                           ;; is that reasonable?
+                           (dict-set! newindex key v))
 
-                         ((procedure? newindex)
-                          ;; TODO signal arity error if incorrect
-                          (void (newindex dict key v)))
+                          ((procedure? newindex)
+                           ;; TODO signal arity error if incorrect
+                           (void (newindex dict key v)))
 
-                         (else
-                          (void (set: (lua-table dict) key v)))))
-                 ;; no meta-table so we simply set the key to value
-                 (super-dict-set! (lua-table dict) key v)))))
+                          (else
+                           (void (set: (lua-table dict) key v)))))
+                  ;; no meta-table so we simply set the key to value
+                  (super-dict-set! (lua-table dict) key v)))))
 
    (define (dict-remove! dict key)
      (super-dict-remove! (lua-table dict) key))
@@ -388,8 +388,8 @@
 
     ;; TODO revisit my logic ops, this or here will return #f instead of
     ;; undefined, I may have been too hasty overloading or and etc
-    ((_ . id:tdk) (syntax/loc stx (or (get: id.table 'id.tag)
-                                      (get: id.table 'id.key))))
+    ((_ . id:tdk) (syntax/loc stx (or? (get: id.table 'id.tag)
+                                       (get: id.table 'id.key))))
 
     ;; TODO ensure arity errors for methods generate meaningful errors
 
@@ -421,8 +421,8 @@
     ;; make-keyword-procedure and keyword-apply appear to do the right thing
     ;; whether methods take keyword args or by position args alone.
     ((_ . id:tck) (syntax/loc stx
-                    (let ((proc (or (get: id.table 'id.tag)
-                                    (get: id.table 'id.key))))
+                    (let ((proc (or? (get: id.table 'id.tag)
+                                     (get: id.table 'id.key))))
                       ;; TODO wait, would that check work for structs with
                       ;; proc:prop?
                       (unless (and (procedure? proc)
@@ -566,7 +566,7 @@
        ;; TODO I doubt this computes correct offset given the above send
        ;; replacements occur
        (let-values ([(l c p) (port-next-location port)])
-         (list src line col pos (and pos (- p pos))))))))
+         (list src line col pos (and? pos (- p pos))))))))
 
  (parameterize ((current-readtable (make-readtable (current-readtable) #\( 'terminating-macro parse-lp))
                 (current-input-port (open-input-string #<<eof
