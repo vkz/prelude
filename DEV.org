@@ -1,7 +1,7 @@
 PRELUDE  -*- mode: org; fill-column: 82 -*-
 #+CATEGORY: prelude
 #+STARTUP: content
-#+seq_todo: TODO STARTED(s@/@) WAITING(w@/@) DELEGATED(l@/@) APPT | DONE(d@/@) DEFERRED(f@/@) CANCELLED(x@/@) IDEA(i/@)
+#+seq_todo: TODO STARTED(s/@) WAITING(w@/@) DELEGATED(l@/@) APPT | DONE(d@/@) DEFERRED(f@/@) CANCELLED(x@/@) IDEA(i/@)
 #+TAGS: { SCHOOL(s) BLOG(b) TIL(t) }
 #+PROPERTY: Effort_ALL 0 0:10 0:30 1:00 2:00 3:00 4:00 5:00 6:00 7:00
 #+COLUMNS: %30ITEM(Task) %CLOCKSUM %15Effort(Effort){:}
@@ -220,6 +220,53 @@ implement something like it simply by setting <insert> or any other metamethod f
 that matter to a procedure that does the deep metachain lookup for <insert>.
 
 *** TODO default <proc> metamethod semantics
+- State "TODO"       from "STARTED"    [2019-05-31 Fri 16:35] \\
+  Ran into a subtlety: when table is run as a procedure its first argument will
+  always be bound to the table whose prop:procedure is being run! This is Racket's
+  doing not ours. However, if tables are to be used as procedures then passing the
+  table itself to the user's <proc> procedure only makes sense when the procedure is
+  actually supposed to act on the table. In general that's not always the case. It
+  is conceivable that we may want to allow certain tables act as normal procedures.
+  Should we do anything special to tell the two cases apart or do we simply note
+  that <prop> metamethod must always have an extra positional argument that'd be
+  bound to the table itself?
+
+  Another possible solution is to have two metamethods <prop> and <tprop> with the
+  latter taking precedence when both are present. Semantics:
+  - when <prop> table is not passed to the user procedure in keyword-apply,
+  - when <tprop> table is included in the args to keyword-apply.
+
+  Something to think about.
+- State "STARTED"    from "TODO"       [2019-05-31 Fri 15:13]
+- State "TODO"       from "STARTED"    [2019-05-31 Fri 14:16] \\
+  Write tests.
+- State "STARTED"    from "TODO"       [2019-05-31 Fri 13:02]
+:LOGBOOK:
+CLOCK: [2019-05-31 Fri 15:19]--[2019-05-31 Fri 16:35] =>  1:16
+CLOCK: [2019-05-31 Fri 15:13]--[2019-05-31 Fri 15:17] =>  0:04
+CLOCK: [2019-05-31 Fri 13:02]--[2019-05-31 Fri 14:16] =>  1:14
+:END:
+
+Current implementation does not provide a default <proc> nor does it look beyond
+the metatable - that is <proc> is strictly a metamethod and only ever looked up on
+the metatable proper. Providing a default or falling through down the ancestor
+chain IMO are problematic. Tables are almost too flexible to offer any reasonable
+default e.g. what to do with <tables> and multiple inheritance in general. If we
+supply the default someone may attempt to rely on it to always be present for any
+table, but then someone might override that.
+
+Luckily we can always implement <proc> that falls through up the mt chain, that
+would only effect current metatable, which is good. By tweaking table constructors
+e.g. #%table or <setmeta> metamethod we could automate this for any metatables we
+derive, at least I think so atm.
+
+This is something I need to try in action and see what works and what tricks I can
+employ. Anything I come up with now may prove unreasonable in practice.
+
+*** TODO consider <id> metamethod semantics
+
+Something to consider in context of error reporting. Be nice if tables could id
+themselves so that error messages could be enriched.
 
 *** TODO default <isa?> metamethod semantics
 

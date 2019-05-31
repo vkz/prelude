@@ -50,7 +50,33 @@
   (apply generic (table-dict t) args))
 
 
+(define (meta-get t key)
+  (define mt (table-meta t))
+  (and? mt (dict-ref mt key)))
+
+
+(define table-procedure
+  (make-keyword-procedure
+   (λ (kws kw-args t . rest)
+     (let ((proc (meta-get t :<proc>)))
+       (if (procedure? proc)
+           ;; TODO subtlety: t will always be bound to the table whose
+           ;; prop:procedure is being run! This is Racket's doing not ours.
+           ;; However, if tables are to be used as procedures then passing the
+           ;; table itself to the keyword-apply below only makes sense when the
+           ;; procedure is actually supposed to act on the table. In general
+           ;; that's not always the case. It is conceivable that we may want to
+           ;; allow certain tables act as normal procedures. Should we do
+           ;; anything special to tell the two cases apart or we simply note that
+           ;; <prop> metamethod must always have an extra positional arg that'd be
+           ;; bound to the table itself?
+           (keyword-apply proc kws kw-args t rest)
+           (error "table has no <proc> metamethod to apply"))))))
+
+
 (struct table (dict meta) #:mutable
+
+  #:property prop:procedure table-procedure
 
   #:methods gen:dict
   ((define/generic ref           dict-ref)
@@ -77,6 +103,13 @@
       (λ (t) 'table)
       (λ (t) (for/list (((k v) (in-dict (table-dict t))))
                (list k v)))))))
+
+(module+ test
+  (define <proc> (table (ht (:<proc> dict-ref)) undefined))
+  (define <kwproc> (table (ht (:<proc> (λ (t #:key key) (dict-ref t key)))) undefined))
+  (check-eq? ((table (ht (:a 1)) <proc>) :a) 1)
+  (check-eq? ((table (ht (:a 1)) <kwproc>) #:key :a) 1)
+  (check-exn exn? (thunk ((table (ht) undefined) 1)) "table has no <proc>"))
 
 
 (module+ test
