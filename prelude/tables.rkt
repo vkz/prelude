@@ -1,6 +1,5 @@
 #lang prelude
 
-
 (require racket/struct
          racket/generic
          (for-syntax syntax/parse
@@ -9,6 +8,28 @@
 (module+ test
   (require rackunit)
   (require prelude/testing))
+
+
+(require (rename-in (only-in racket #%top)
+                    (#%top racket/#%top)))
+
+
+(begin-for-syntax
+  (define-syntax-class tag
+    (pattern id:id
+             #:when
+             (regexp-match #px"^[:]\\S+" (symbol->string (syntax->datum #'id))))))
+
+
+(define-syntax (#%top stx)
+  (syntax-parse stx
+    ;; wrap :tags in #%datum, otherwise delegate to Racket #:top
+    ((_ . id:tag) (syntax/loc stx (#%datum . id)))
+    ((_ . id:id) (syntax/loc stx (racket/#%top . id)))
+    (_ (raise-syntax-error '#%top "invalid syntax in top"))))
+
+
+(provide table table-meta set-table-meta! table? (rename-out (#%top top)))
 
 
 ;;* Table struct ------------------------------------------------- *;;
@@ -51,19 +72,19 @@
 (module+ test
 
   (test-case "gen:dict"
-    (define t (table (ht ('a 1)) undefined))
-    (check-true (dict-has-key? t 'a))
-    (check-eq? (dict-ref t 'a) 1)
-    (check-true (undefined? (dict-ref t 'b)))
-    (check-not-exn (thunk (dict-set! t 'b 2)))
-    (check-eq? (dict-ref t 'b) 2))
+    (define t (table (ht (:a 1)) undefined))
+    (check-true (dict-has-key? t :a))
+    (check-eq? (dict-ref t :a) 1)
+    (check-true (undefined? (dict-ref t :b)))
+    (check-not-exn (thunk (dict-set! t :b 2)))
+    (check-eq? (dict-ref t :b) 2))
 
   (test-case "gen:associative"
-    (define tb (table (ht ('b 1)) undefined))
-    (define ta (table (ht ('a tb)) undefined))
-    (check-eq? (get: ta 'a 'b) 1)
-    (check-not-exn (thunk (set: ta 'a 'c 2)))
-    (check-eq? (get: ta 'a 'c) 2)))
+    (define tb (table (ht (:b 1)) undefined))
+    (define ta (table (ht (:a tb)) undefined))
+    (check-eq? (get: ta :a :b) 1)
+    (check-not-exn (thunk (set: ta :a :c 2)))
+    (check-eq? (get: ta :a :c) 2)))
 
 
 ;;* <get> metamethod --------------------------------------------- *;;
@@ -75,7 +96,7 @@
       (dict-ref t key)
       (if (table? (table-meta t))
           (let* ((mt (table-meta t))
-                 (metamethod (dict-ref mt ':<get>)))
+                 (metamethod (dict-ref mt :<get>)))
             (if metamethod
                 (cond
                   ((table? metamethod) (get metamethod key))
@@ -96,7 +117,7 @@
           (dict-set! t key v)
           (if (table? (table-meta t))
               (let* ((mt (table-meta t))
-                     (metamethod (dict-ref mt ':<insert>)))
+                     (metamethod (dict-ref mt :<insert>)))
                 (cond
                   ((table? metamethod) (set metamethod key v))
                   ((procedure? metamethod) (metamethod t key v))
@@ -108,54 +129,54 @@
 
 (module+ test
 
-  (define/checked mt (table (ht ('b 2)) undefined))
-  (define/checked t (table #;t (ht ('a 1)) #;mt mt))
+  (define/checked mt (table (ht (:b 2)) undefined))
+  (define/checked t (table #;t (ht (:a 1)) #;mt mt))
   (define/checked tt (table #;t (ht) #;mt t))
-  (define/checked t<get>proc (table #;t (ht) #;mt (table (ht (':<get> (λ (_ key) (get t key)))) undefined)))
-  (define/checked t<get>table (table #;t (ht) #;mt (table (ht (':<get> t)) undefined)))
+  (define/checked t<get>proc (table #;t (ht) #;mt (table (ht (:<get> (λ (_ key) (get t key)))) undefined)))
+  (define/checked t<get>table (table #;t (ht) #;mt (table (ht (:<get> t)) undefined)))
 
   (test-case "get: when mt is a table"
-    (check-eq? (get t 'a) 1)
-    (check-eq? (get t 'b) 2)
-    (check-pred undefined? (get t 'c))
+    (check-eq? (get t :a) 1)
+    (check-eq? (get t :b) 2)
+    (check-pred undefined? (get t :c))
     ;; deeper mt chain
-    (check-eq? (get tt 'a) 1)
-    (check-eq? (get tt 'b) 2)
-    (check-pred undefined? (get tt 'c)))
+    (check-eq? (get tt :a) 1)
+    (check-eq? (get tt :b) 2)
+    (check-pred undefined? (get tt :c)))
 
   (test-case "get: when <get> metamethod is a procedure"
-    (check-eq? (get t<get>proc 'a) 1)
-    (check-eq? (get t<get>proc 'b) 2)
-    (check-pred undefined? (get t<get>proc 'c)))
+    (check-eq? (get t<get>proc :a) 1)
+    (check-eq? (get t<get>proc :b) 2)
+    (check-pred undefined? (get t<get>proc :c)))
 
   (test-case "get: when <get> metamethod is a table"
-    (check-eq? (get t<get>table 'a) 1)
-    (check-eq? (get t<get>table 'b) 2)
-    (check-pred undefined? (get t<get>table 'c)))
+    (check-eq? (get t<get>table :a) 1)
+    (check-eq? (get t<get>table :b) 2)
+    (check-pred undefined? (get t<get>table :c)))
 
   (test-case "set: with no <insert> metamethod"
     ;; insert
-    (check-not-exn (thunk (set t 'c 3)))
-    (check-eq? (get t 'c) 3)
+    (check-not-exn (thunk (set t :c 3)))
+    (check-eq? (get t :c) 3)
     ;; update
-    (check-not-exn (thunk (set t 'a 0)))
-    (check-eq? (get t 'a) 0))
+    (check-not-exn (thunk (set t :a 0)))
+    (check-eq? (get t :a) 0))
 
   (test-case "set: when <insert> metamethod is a table"
-    (check-not-exn (thunk (set mt ':<insert> mt)))
+    (check-not-exn (thunk (set mt :<insert> mt)))
     ;; insert
-    (check-not-exn (thunk (set t 'd 4)))
-    (check-eq? (get mt 'd) 4)
-    (check-eq? (get t 'd) 4)
+    (check-not-exn (thunk (set t :d 4)))
+    (check-eq? (get mt :d) 4)
+    (check-eq? (get t :d) 4)
     ;; update inserted
-    (check-not-exn (thunk (set t 'd 0)))
-    (check-eq? (get mt 'd) 0)
+    (check-not-exn (thunk (set t :d 0)))
+    (check-eq? (get mt :d) 0)
     ;; update existing
-    (check-not-exn (thunk (set t 'a -1)))
-    (check-eq? (get t 'a) -1))
+    (check-not-exn (thunk (set t :a -1)))
+    (check-eq? (get t :a) -1))
 
   (test-case "set: when <insert> metamethod is a procedure"
-    (check-not-exn (thunk (set mt ':<insert> (λ (_ k v) (set mt k v)))))
-    (check-not-exn (thunk (set t 'e 5)))
-    (check-eq? (get mt 'e) 5)
-    (check-eq? (get t 'e) 5)))
+    (check-not-exn (thunk (set mt :<insert> (λ (_ k v) (set mt k v)))))
+    (check-not-exn (thunk (set t :e 5)))
+    (check-eq? (get mt :e) 5)
+    (check-eq? (get t :e) 5)))
