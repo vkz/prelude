@@ -5,11 +5,12 @@
          racket/generic
          (for-syntax syntax/parse
                      racket/match)
-         ;; replace #%top with our implementation
-         (rename-in (only-in racket #%top) (#%top racket/#%top)))
+         (only-in racket
+                  [#%top racket/#%top]
+                  [#%app racket/#%app]))
 
 
-(provide (rename-out (#%top top)))
+(provide (rename-out (#%top top) (#%app app)))
 
 
 (module+ test
@@ -103,6 +104,7 @@
       (λ (t) 'table)
       (λ (t) (for/list (((k v) (in-dict (table-dict t))))
                (list k v)))))))
+
 
 (module+ test
   (define <proc> (table (ht (:<proc> dict-ref)) undefined))
@@ -228,3 +230,67 @@
     (check-not-exn (thunk (set t :e 5)))
     (check-eq? (get mt :e) 5)
     (check-eq? (get t :e) 5)))
+
+
+;;* <hierarchy> -------------------------------------------------- *;;
+
+
+(define <table> (table (ht) undefined))
+
+
+;;* #%app -------------------------------------------------------- *;;
+
+
+(begin-for-syntax
+
+  ;; TODO this does not cover #:kw arguments but we should capture them and simply
+  ;; pass  along to #%table constructor.
+  (define-syntax-class table-entry
+    (pattern
+     (~describe #:role "table entry"
+                "(key value) pair"
+                ((~and key:expr (~not (~literal quote))) value:expr)))))
+
+
+(define-syntax (#%table stx)
+  (syntax-parse stx
+    ((_ mt:id entry:table-entry ...)
+     ;; TODO call <setmeta> metamethod when present
+     (syntax/loc stx (table (ht entry ...) mt)))))
+
+
+(define-syntax (#%app stx)
+  (if (eq? #\{ (syntax-property stx 'paren-shape))
+
+      ;; parse {#%app}
+      (syntax-parse stx
+        #:context (list '|{ }| (with-syntax (((_ e ...) stx))
+                                 (syntax/loc stx {e ...})))
+        ((_ mt:id entry:table-entry ...)
+         #:with #%table (datum->syntax stx '#%table stx)
+         (syntax/loc stx (#%table mt entry ...)))
+
+        ((_ entry:table-entry ...)
+         #:with #%table (datum->syntax stx '#%table stx)
+         ;; TODO would it make sense to use <table> binding at the call site?
+         ;; Thereby allowing the user to swap it for something else? Beware
+         ;; accidentally making <table> dynamically scoped though? I think the
+         ;; same trick as with #%table would work here.
+         (syntax/loc stx (#%table <table> entry ...)))
+
+        ;; NOTE we use dotted pair to match to correctly cover application
+        ;; expressions that may be using dot-notation themselves e.g. (foo x . y)
+        ((_ . rest)
+         ;; delegate to Racket #%app
+         (syntax/loc stx (racket/#%app . rest))))
+
+      ;; parse non {#%app}
+      (with-syntax (((_ . rest) stx))
+        ;; delegate to Racket's #:app
+        (syntax/loc stx (racket/#%app . rest)))))
+
+
+(module+ test
+  (test-case "Use #%table from macro invocation context"
+    (let-syntax ([#%table (syntax-rules () [(_ mt entry ...) (ht entry ...)])])
+      (check-equal? (ht (:a 1)) {(:a 1)}))))

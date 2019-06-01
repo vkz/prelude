@@ -314,6 +314,14 @@ slots, as soon as we swap an mt for another, its slots are available to the
 instance unless it shadows them with slots of the same name.
 
 *** TODO default #%table constructor semantics
+- State "TODO"       from "STARTED"    [2019-06-01 Sat 16:41] \\
+  Have basic costructor. Need to add call to <setmeta> metamethod. Also need to
+  implement equality, so I can use it in tests.
+- State "TODO"       from "STARTED"    [2019-06-01 Sat 15:57]
+:LOGBOOK:
+CLOCK: [2019-06-01 Sat 16:09]--[2019-06-01 Sat 16:41] =>  0:32
+CLOCK: [2019-06-01 Sat 15:45]--[2019-06-01 Sat 15:56] =>  0:11
+:END:
 
 Default #%table semantics then is this:
 1. create a fresh table with any slots passed,
@@ -336,6 +344,12 @@ constructor. Still pretty dangerous but maybe a reasonable trade-off a-la
 unchecked integer ops etc.
 
 *** TODO Expand {<metatable>} syntax into #%table
+- State "TODO"       from "STARTED"    [2019-06-01 Sat 15:44] \\
+  We currently expand into #%table, but assume no #:kw args, so checking only table
+  entries. Next we should also cover relevant #:kw args.
+:LOGBOOK:
+CLOCK: [2019-06-01 Sat 15:13]--[2019-06-01 Sat 15:44] =>  0:31
+:END:
 
 Expand into ~#%table~, which we expose and let the user override.
 
@@ -344,6 +358,9 @@ Expand into ~#%table~, which we expose and let the user override.
 ;; =>
 (#%table ...)
 #+end_src
+
+**** TODO Allow #:kw args in {} syntax
+  [2019-06-01 Sat]
 
 *** TODO Allow #:spec or #:declare keyword arguments in constructors
 
@@ -1214,6 +1231,20 @@ Probably just have ~isa~ cond with Racket predicates and return corresponding
 table e.g.
 
 * TIL in Racket
+
+** How (foo ...) expands in different situations                       :TIL:
+
+#+begin_quote
+If it is a syntax-object pair whose first element is an identifier, and if the
+identifier has a binding other than as a top-level variable, then the identifier’s
+binding is used to continue.
+#+end_quote
+
+while syntax pair of any other form will expand into (#%app ...), so in our foo
+case into (#%app foo ...). So be careful when you test foo that's supposed to be
+bound at call site but not necessarily at macro-definition site. This matters when
+you are attempting to implement forms similar to #%app. I found out in the context
+of #%table.
 
 ** Extract struct info from structure type transformer binding         :TIL:
 
