@@ -254,9 +254,13 @@
 
 (define-syntax (#%table stx)
   (syntax-parse stx
+    #:context (list '|{}| (with-syntax (((_ e ...) stx))
+                            ;; doesn't seem to effect paren shape in error msg
+                            (syntax-property (syntax/loc stx {e ...}) 'paren-shape #\{)))
     ((_ mt:id entry:table-entry ...)
-     ;; TODO call <setmeta> metamethod when present
-     (syntax/loc stx (table (ht entry ...) mt)))))
+     (syntax/loc stx (let* ((t (table (ht entry ...) mt))
+                            (metamethod (or? (meta-get t :<setmeta>) identity)))
+                       (metamethod t))))))
 
 
 (define-syntax (#%app stx)
@@ -264,19 +268,14 @@
 
       ;; parse {#%app}
       (syntax-parse stx
-        #:context (list '|{ }| (with-syntax (((_ e ...) stx))
-                                 (syntax/loc stx {e ...})))
-        ((_ mt:id entry:table-entry ...)
-         #:with #%table (datum->syntax stx '#%table stx)
-         (syntax/loc stx (#%table mt entry ...)))
 
-        ((_ entry:table-entry ...)
+        ;; TODO would it make sense to use <table> binding at the call site?
+        ;; Thereby allowing the user to swap it for something else? Beware
+        ;; accidentally making <table> dynamically scoped though? I think the same
+        ;; trick as with #%table would work here.
+        ((_ (~optional (~seq mt:id) #:defaults ((mt #'<table>))) e ...)
          #:with #%table (datum->syntax stx '#%table stx)
-         ;; TODO would it make sense to use <table> binding at the call site?
-         ;; Thereby allowing the user to swap it for something else? Beware
-         ;; accidentally making <table> dynamically scoped though? I think the
-         ;; same trick as with #%table would work here.
-         (syntax/loc stx (#%table <table> entry ...)))
+         (syntax/loc stx (#%table mt e ...)))
 
         ;; NOTE we use dotted pair to match to correctly cover application
         ;; expressions that may be using dot-notation themselves e.g. (foo x . y)
@@ -291,6 +290,14 @@
 
 
 (module+ test
+  (define/checked <c> {(:<setmeta> (λ (t) (set t :answer 42)))})
+
+  (test-case "Default table constructor invokes <setmeta>"
+    (define/checked c {<c> (:a 1)})
+    (check-eq? (get c :a) 1)
+    (check-eq? (get c :answer) 42)
+    (check-eq? (dict-ref c :answer) 42))
+
   (test-case "Use #%table from macro invocation context"
     (let-syntax ([#%table (syntax-rules () [(_ mt entry ...) (ht entry ...)])])
       (check-equal? (ht (:a 1)) {(:a 1)}))))

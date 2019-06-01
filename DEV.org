@@ -313,12 +313,16 @@ and after. We have it easy, since metatables are just tables, with their own
 slots, as soon as we swap an mt for another, its slots are available to the
 instance unless it shadows them with slots of the same name.
 
-*** TODO default #%table constructor semantics
+*** DONE default #%table constructor semantics
+CLOSED: [2019-06-01 Sat 20:04]
+- State "DONE"       from "STARTED"    [2019-06-01 Sat 20:04] \\
+  Added <setmeta> call to default table constructor.
 - State "TODO"       from "STARTED"    [2019-06-01 Sat 16:41] \\
   Have basic costructor. Need to add call to <setmeta> metamethod. Also need to
   implement equality, so I can use it in tests.
 - State "TODO"       from "STARTED"    [2019-06-01 Sat 15:57]
 :LOGBOOK:
+CLOCK: [2019-06-01 Sat 19:48]--[2019-06-01 Sat 20:04] =>  0:16
 CLOCK: [2019-06-01 Sat 16:09]--[2019-06-01 Sat 16:41] =>  0:32
 CLOCK: [2019-06-01 Sat 15:45]--[2019-06-01 Sat 15:56] =>  0:11
 :END:
@@ -343,7 +347,23 @@ provide a setting that lets you turn the check off in constructors but say not i
 constructor. Still pretty dangerous but maybe a reasonable trade-off a-la
 unchecked integer ops etc.
 
-*** TODO Expand {<metatable>} syntax into #%table
+*** TODO Allow #:kw args in {} constructors
+- State "TODO"       from "STARTED"    [2019-06-01 Sat 20:38] \\
+  Moved actual parsing into #%table.
+:LOGBOOK:
+CLOCK: [2019-06-01 Sat 20:16]--[2019-06-01 Sat 20:38] =>  0:22
+:END:
+
+To simplify life I think we should treat {} syntax exclusively for table
+construction. Since the most typical user extension should only ever deal with
+#%table, {} can safely pass through any and all arguments without any extra
+checks, that includes any #:kw args. All checks will have to be done in #%table
+and reported with correct context.
+
+*** DONE Expand {<metatable>} syntax into #%table
+CLOSED: [2019-06-01 Sat 20:15]
+- State "DONE"       from "TODO"       [2019-06-01 Sat 20:15] \\
+  Moved #:kw args into separate TODO item.
 - State "TODO"       from "STARTED"    [2019-06-01 Sat 15:44] \\
   We currently expand into #%table, but assume no #:kw args, so checking only table
   entries. Next we should also cover relevant #:kw args.
@@ -358,9 +378,6 @@ Expand into ~#%table~, which we expose and let the user override.
 ;; =>
 (#%table ...)
 #+end_src
-
-**** TODO Allow #:kw args in {} syntax
-  [2019-06-01 Sat]
 
 *** TODO Allow #:spec or #:declare keyword arguments in constructors
 
