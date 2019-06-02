@@ -25,7 +25,37 @@
   (define-syntax-class tag
     (pattern id:id
              #:when
-             (regexp-match #px"^[:]\\S+" (symbol->string (syntax->datum #'id))))))
+             (regexp-match #px"^[:]\\S+" (symbol->string (syntax->datum #'id)))))
+
+  (define (table-sep-key? id sep)
+    (define rx (format "^(.+)~a(.+)$" (regexp-quote sep)))
+    (match (symbol->string (syntax->datum id))
+      ((regexp rx (list _ table key))
+       (list
+        ;; table
+        (datum->syntax id (string->symbol table) id)
+        ;; tag key
+        (datum->syntax id (string->symbol (format ":~a" key)) id)
+        ;; sym key
+        (datum->syntax id (string->symbol key) id)))
+      (else #f)))
+
+  ;; TODO dry this - parameterizing by sep
+  (define-syntax-class table-colon-key
+    (pattern id:id
+             #:when (table-sep-key? #'id ":")
+             #:do [(match-define (list table tag key) (table-sep-key? #'id ":"))]
+             #:with table table
+             #:with key key
+             #:with tag tag))
+
+  (define-syntax-class table-dot-key
+    (pattern id:id
+             #:when (table-sep-key? #'id ".")
+             #:do [(match-define (list table tag key) (table-sep-key? #'id "."))]
+             #:with table table
+             #:with key key
+             #:with tag tag)))
 
 (define (tag? t)
   (and (symbol? t)
@@ -37,10 +67,46 @@
 
 (define-syntax (#%top stx)
   (syntax-parse stx
-    ;; wrap :tags in #%datum, otherwise delegate to Racket #:top
-    ((_ . id:tag) (syntax/loc stx (#%datum . id)))
-    ((_ . id:id) (syntax/loc stx (racket/#%top . id)))
+
+    ((_ . id:table-dot-key)
+     ;; table.key =>
+     (syntax/loc stx (or? (get id.table 'id.tag)
+                          (get id.table 'id.key))))
+
+    ((_ . id:table-colon-key)
+     ;; table:key =>
+     (syntax/loc stx
+       (let ((proc (or? (get id.table 'id.tag)
+                        (get id.table 'id.key))))
+         (make-keyword-procedure
+          (λ (kws kw-args . rest) (keyword-apply proc kws kw-args id.table rest))
+          (λ args (apply proc id.table args))))))
+
+    ((_ . id:tag)
+     ;; :tag =>
+     (syntax/loc stx (#%datum . id)))
+
+    ((_ . id:id)
+     ;; id =>
+     (syntax/loc stx (racket/#%top . id)))
+
     (_ (raise-syntax-error '#%top "invalid syntax in top"))))
+
+
+(module+ test
+  (test-case "t.k and t:k accessors"
+    (define <proc> {(:<proc> (λ (mt t k) (get t k)))})
+    (define proc {<proc>})
+    (define t {(:a 1)
+               ;; procedure
+               (:f (λ (t k) (get t k)))
+               ;; struct procedure
+               (:proc proc)})
+    (check-eq? t.a 1)
+    (check-eq? (t.f t :a) 1)
+    (check-eq? (t:f :a) 1)
+    (check-eq? (t.proc t :a) 1)
+    (check-eq? (t:proc :a) 1)))
 
 
 ;;* table struct ------------------------------------------------- *;;
@@ -61,16 +127,10 @@
    (λ (kws kw-args t . rest)
      (let ((proc (meta-get t :<proc>)))
        (if (procedure? proc)
-           ;; TODO subtlety: t will always be bound to the table whose
-           ;; prop:procedure is being run! This is Racket's doing not ours.
-           ;; However, if tables are to be used as procedures then passing the
-           ;; table itself to the keyword-apply below only makes sense when the
-           ;; procedure is actually supposed to act on the table. In general
-           ;; that's not always the case. It is conceivable that we may want to
-           ;; allow certain tables act as normal procedures. Should we do
-           ;; anything special to tell the two cases apart or we simply note that
-           ;; <prop> metamethod must always have an extra positional arg that'd be
-           ;; bound to the table itself?
+           ;; NOTE t here will always be bound to the table that was invoked as
+           ;; procedure i.e. table whose metatable specifies (:<proc> proc) - a
+           ;; consequence of how Racket prop:procedure operates. This means that
+           ;; proc must be a procedure of at least one argument.
            (keyword-apply proc kws kw-args t rest)
            (error "table has no <proc> metamethod to apply"))))))
 

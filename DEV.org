@@ -347,20 +347,39 @@ break any other code! So, we haven't lost flexibility yet gained robustness!
 
 *** TODO Guard against undefined values in constructor
 
-This is the only way we can guarantee that undefined value doesn't sneak in. This
-may carry substantial costs though, so I'm not sure about the best way to proceed.
+Two cases to cover:
+- table constructor,
+- ~set~ function must ensure that <set>, <insert>, <setmeta> metamethods don't set
+  values to undefined).
 
-One alternative is to make it a convention and simply say that its UB if you ever
-attempt set a slot to undefined. That doesn't sit well with me. However, we could
-provide a setting that lets you turn the check off in constructors but say not in
-~set~ once you go into production and made sure no undefine can ever occur in the
+Alternative: make setting to undefined equivalent to removing the key entirely.
+What my Lua implementation currently does.
+
+Alternative: make it a convention and simply say that its UB if you ever attempt
+set a slot to undefined. That doesn't sit well with me. However, we could provide
+a setting that lets you turn the check off in constructors but say not in ~set~
+once you go into production and made sure no undefine can ever occur in the
 constructor. Still pretty dangerous but maybe a reasonable trade-off a-la
 unchecked integer ops etc.
 
 *** TODO Allow #:kw args in {} constructors
+- State "TODO"       from "STARTED"    [2019-06-02 Sun 11:54] \\
+  It's actually not obvious how to allow #:kw args under the assumption that users
+  may want to extend the set of such args with their own keywords. First we need to
+  parse them. Assuming we use [[file:~/Code/racket/racket/doc/syntax/syntax-helpers.html?q=parse-keyword-options#%2528def._%2528%2528lib._syntax%252Fkeyword..rkt%2529._parse-keyword-options%2529%2529][parse-keyword-options]] then to parse user options we
+  must both expose keyword-table, so the user may extend it then use that extended
+  table to parse. But that's just parsing - obtaining options with the rest being
+  table entries. Options presumably carry some semantics with them which probably
+  ought to transform the constructor result in some way? This too must be user
+  supplied if we allow extensions. So you see, not obvious at all. One possible
+  solution is for each keyword to represent a table-instance handler
+  (imddleware-style) where the final table instance is simply the result of nesting
+  all handlers (->> t h1 h2 h3 ...) => final table. But that means that user
+  supplied keyword args may only effect table at runtime.
 - State "TODO"       from "STARTED"    [2019-06-01 Sat 20:38] \\
   Moved actual parsing into #%table.
 :LOGBOOK:
+CLOCK: [2019-06-02 Sun 11:32]--[2019-06-02 Sun 11:54] =>  0:22
 CLOCK: [2019-06-01 Sat 20:16]--[2019-06-01 Sat 20:38] =>  0:22
 :END:
 
