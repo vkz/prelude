@@ -75,7 +75,12 @@
            (error "table has no <proc> metamethod to apply"))))))
 
 
-(struct table (dict meta) #:mutable
+(struct table (dict meta)
+  #:mutable
+  ;; NOTE We make table struct #:transparent for now to avoid the need for custom
+  ;; gen:equal+hash interface. Basically, we fallback on the default equal? Would
+  ;; need to revisit if this becomes a perf bottleneck or table semantics changes.
+  #:transparent
 
   #:property prop:procedure table-procedure
 
@@ -107,11 +112,19 @@
 
 
 (module+ test
-  (define <proc> (table (ht (:<proc> dict-ref)) undefined))
-  (define <kwproc> (table (ht (:<proc> (λ (t #:key key) (dict-ref t key)))) undefined))
-  (check-eq? ((table (ht (:a 1)) <proc>) :a) 1)
-  (check-eq? ((table (ht (:a 1)) <kwproc>) #:key :a) 1)
-  (check-exn exn? (thunk ((table (ht) undefined) 1)) "table has no <proc>"))
+
+  (test-case "<proc>"
+    (define <proc> (table (ht (:<proc> dict-ref)) undefined))
+    (define <kwproc> (table (ht (:<proc> (λ (t #:key key) (dict-ref t key)))) undefined))
+    (check-eq? ((table (ht (:a 1)) <proc>) :a) 1)
+    (check-eq? ((table (ht (:a 1)) <kwproc>) #:key :a) 1)
+    (check-exn exn? (thunk ((table (ht) undefined) 1)) "table has no <proc>"))
+
+  (test-case "equality"
+    (define <mt> {(:b 2)})
+    (check-true (equal? {} {}))
+    (check-true (equal? {<mt> (:a 1)} {<mt> (:a 1)}))
+    (check-false (equal? {(:a 1)} {}))))
 
 
 (module+ test
@@ -137,7 +150,9 @@
 
 ;; TODO Default table struct constructor doesn't check the values in the table, so
 ;; it will happily allow undefined their. We'll have to disallow undefined in
-;; whatever constructor we end up providing.
+;; whatever constructor we end up providing. We probably want this as the final
+;; step after any calls to <setmeta> to ensure user doesn't accidentally sets to
+;; undefined in the post-creation <setmeta> step.
 
 
 ;; TODO consider optional default proc argument?

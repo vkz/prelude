@@ -273,7 +273,7 @@ derive, at least I think so atm.
 This is something I need to try in action and see what works and what tricks I can
 employ. Anything I come up with now may prove unreasonable in practice.
 
-*** TODO consider <id> metamethod semantics
+*** TODO consider <name> metamethod semantics
 
 Something to consider in context of error reporting. Be nice if tables could id
 themselves so that error messages could be enriched.
