@@ -12,7 +12,6 @@
 
 
 (provide #%top #%app #%table #%.
-         table-entry-guard
          get set meta-get
          <table>
          tag?)
@@ -244,28 +243,23 @@
 
 
 (define (set t k v)
-  ;; TODO alternative: undefined means remove k-entry from table
-  (define guard (table-entry-guard))
-  (when guard
-    (unless (guard k v)
-      (raise-argument-error
-       'set (format (string-append
-                     "table-entry-guard to succeed for"
-                     " \n\t key: ~a"
-                     " \n\t value: ~a")
-                    k v) v)))
-  (if (dict-has-key? t k)
-      (dict-set! t k v)
-      (if (table? (table-meta t))
-          (let* ((mt (table-meta t))
-                 (metamethod (dict-ref mt :<insert>)))
-            (cond
-              ((table? metamethod) (set metamethod k v))
-              ((procedure? metamethod) (metamethod t k v))
-              ;; TODO should we signal an error?
-              (else (dict-set! t k v))))
-          (dict-set! t k v)))
+  (if (undefined? v)
+      (dict-remove! (table-dict t) k)
+      (if (dict-has-key? t k)
+          (dict-set! t k v)
+          (if (table? (table-meta t))
+              (let* ((mt (table-meta t))
+                     (metamethod (dict-ref mt :<insert>)))
+                (cond
+                  ((table? metamethod) (set metamethod k v))
+                  ((procedure? metamethod) (metamethod t k v))
+                  ;; TODO should we signal an error?
+                  (else (dict-set! t k v))))
+              (dict-set! t k v))))
   t)
+
+
+(define (rm t k) (set t k undefined))
 
 
 (module+ test
@@ -337,21 +331,11 @@
   ;; TODO this does not cover #:kw arguments but we should capture them and simply
   ;; pass  along to #%table constructor.
   (define-syntax-class table-entry
+    #:attributes (key value)
     (pattern
      (~describe #:role "table entry"
                 "(key value) pair"
                 ((~and key:expr (~not (~literal quote))) value:expr)))))
-
-
-(define table-entry-guard
-  (make-parameter
-   (λ (_ v) (not (undefined? v)))
-   (λ (guard)
-     (define contract (or/c #f (procedure-arity-includes/c 2)))
-     (unless (contract guard)
-       (raise-argument-error
-        'table-entry-guard "#f or procedure of 2 arguments" guard))
-     guard)))
 
 
 (define-syntax (#%table stx)
@@ -363,20 +347,12 @@
      (syntax/loc stx (let* ((h (ht entry ...))
                             (t (table h mt))
                             (metamethod (or? (meta-get t :<setmeta>) identity))
-                            (guard (table-entry-guard)))
-                       ;; TODO consider delegating the check to set: makes logic
-                       ;; simple at the cost of extra indirection
-                       ;;   (for-each (curry set t) keys values)
-                       (when guard
-                         (for/first (((k v) (in-hash h))
-                                     #:unless (guard k v))
-                           ;; TODO good enough and shows the trace, yet feels icky
-                           (raise-argument-error
-                            '#%table (format (string-append
-                                              "table-entry-guard to succeed for"
-                                              " \n\t key: ~a"
-                                              " \n\t value: ~a")
-                                             k v) v)))
+                            (undefs (for/list (((k v) (in-mutable-hash h))
+                                               #:when (undefined? v))
+                                      k)))
+                       (for-each (curry dict-remove! h) undefs)
+                       ;; Or ok according to docs to drop keys like this:
+                       ;; (hash-map h (λ (k _) (dict-remove! h k)))
                        (metamethod t))))))
 
 
@@ -412,11 +388,12 @@
 (module+ test
   (define/checked <c> {(:<setmeta> (λ (t) (set t :answer 42)))})
 
-  (test-case "table-entry-guard"
-    (check-exn exn? (thunk {(:a undefined)}) "table-entry-guard")
-    (check-not-exn (thunk (parameterize ((table-entry-guard #f))
-                            {(:a undefined)})))
-    (check-exn exn? (thunk (define t {}) (set t :k undefined)) "table-entry-guard"))
+  (test-case "undefined values"
+    (define t {(:a 1) (:b 2)})
+    (check-equal? {(:a 1) (:c undefined) (:b 2) (:d undefined)} t)
+    (check-equal? (set t :c undefined) t)
+    (check-equal? (set t :b undefined) {(:a 1)})
+    (check-equal? (rm t :a) {}))
 
   (test-case "Default table constructor invokes <setmeta>"
     (define/checked c {<c> (:a 1)})
