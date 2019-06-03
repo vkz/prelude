@@ -349,7 +349,27 @@ Default #%table semantics then is this:
 Anyone can simply redefine #%table to obtain different semantics that wouldn't
 break any other code! So, we haven't lost flexibility yet gained robustness!
 
-*** TODO Guard against undefined values in constructor
+*** TODO Consider delegating undefined guard to ~set~
+
+Constructor body then becomes trivial with ~keys~ and ~values~ spliced in by our
+macro:
+#+begin_src racket
+  (for-each (curry set t) keys values)
+#+end_src
+
+We gain simplicity at the cost of extra indirection, which almost certainly brings
+overhead.
+
+*** DONE Guard against undefined values in constructor
+CLOSED: [2019-06-03 Mon 13:42]
+- State "DONE"       from "STARTED"    [2019-06-03 Mon 13:42] \\
+  Ended up exposing a guard as a parameter ~table-entry-guard~ set to a procedure
+  that takes key and value and returns #t or #f. #f triggers an argument error. User
+  may dynamically supply their own guard or set it to #f, which would be equivalent
+  to unsafe (do not check for undefined).
+:LOGBOOK:
+CLOCK: [2019-06-03 Mon 12:30]--[2019-06-03 Mon 13:42] =>  1:12
+:END:
 
 Two cases to cover:
 - table constructor,

@@ -12,6 +12,7 @@
 
 
 (provide #%top #%app #%table #%.
+         table-entry-guard
          get set meta-get
          <table>
          tag?)
@@ -334,14 +335,40 @@
                 ((~and key:expr (~not (~literal quote))) value:expr)))))
 
 
+(define table-entry-guard
+  (make-parameter
+   (λ (_ v) (not (undefined? v)))
+   (λ (guard)
+     (define contract (or/c #f (procedure-arity-includes/c 2)))
+     (unless (contract guard)
+       (raise-argument-error
+        'table-entry-guard "#f or procedure of 2 arguments" guard))
+     guard)))
+
+
 (define-syntax (#%table stx)
   (syntax-parse stx
     #:context (list '|{}| (with-syntax (((_ e ...) stx))
                             ;; doesn't seem to effect paren shape in error msg
                             (syntax-property (syntax/loc stx {e ...}) 'paren-shape #\{)))
     ((_ mt:id entry:table-entry ...)
-     (syntax/loc stx (let* ((t (table (ht entry ...) mt))
-                            (metamethod (or? (meta-get t :<setmeta>) identity)))
+     (syntax/loc stx (let* ((h (ht entry ...))
+                            (t (table h mt))
+                            (metamethod (or? (meta-get t :<setmeta>) identity))
+                            (guard (table-entry-guard)))
+                       ;; TODO consider delegating the check to set: makes logic
+                       ;; simple at the cost of extra indirection
+                       ;;   (for-each (curry set t) keys values)
+                       (when guard
+                         (for/first (((k v) (in-hash h))
+                                     #:unless (guard k v))
+                           ;; TODO good enough and shows the trace, yet feels icky
+                           (raise-argument-error
+                            '#%table (format (string-append
+                                              "table-entry-guard to succeed for"
+                                              " \n\t key: ~a"
+                                              " \n\t value: ~a")
+                                             k v) v)))
                        (metamethod t))))))
 
 
@@ -376,6 +403,11 @@
 
 (module+ test
   (define/checked <c> {(:<setmeta> (λ (t) (set t :answer 42)))})
+
+  (test-case "table-entry-guard"
+    (check-exn exn? (thunk {(:a undefined)}) "table-entry-guard")
+    (check-not-exn (thunk (parameterize ((table-entry-guard #f))
+                            {(:a undefined)}))))
 
   (test-case "Default table constructor invokes <setmeta>"
     (define/checked c {<c> (:a 1)})
