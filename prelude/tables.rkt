@@ -243,20 +243,28 @@
 ;;* set ---------------------------------------------------------- *;;
 
 
-(define (set t key v)
-  (if (undefined? v)
-      (raise-argument-error 'set "not undefined?" 3 v t key)
-      (if (dict-has-key? t key)
-          (dict-set! t key v)
-          (if (table? (table-meta t))
-              (let* ((mt (table-meta t))
-                     (metamethod (dict-ref mt :<insert>)))
-                (cond
-                  ((table? metamethod) (set metamethod key v))
-                  ((procedure? metamethod) (metamethod t key v))
-                  ;; TODO should we signal an error?
-                  (else (dict-set! t key v))))
-              (dict-set! t key v))))
+(define (set t k v)
+  ;; TODO alternative: undefined means remove k-entry from table
+  (define guard (table-entry-guard))
+  (when guard
+    (unless (guard k v)
+      (raise-argument-error
+       'set (format (string-append
+                     "table-entry-guard to succeed for"
+                     " \n\t key: ~a"
+                     " \n\t value: ~a")
+                    k v) v)))
+  (if (dict-has-key? t k)
+      (dict-set! t k v)
+      (if (table? (table-meta t))
+          (let* ((mt (table-meta t))
+                 (metamethod (dict-ref mt :<insert>)))
+            (cond
+              ((table? metamethod) (set metamethod k v))
+              ((procedure? metamethod) (metamethod t k v))
+              ;; TODO should we signal an error?
+              (else (dict-set! t k v))))
+          (dict-set! t k v)))
   t)
 
 
@@ -407,7 +415,8 @@
   (test-case "table-entry-guard"
     (check-exn exn? (thunk {(:a undefined)}) "table-entry-guard")
     (check-not-exn (thunk (parameterize ((table-entry-guard #f))
-                            {(:a undefined)}))))
+                            {(:a undefined)})))
+    (check-exn exn? (thunk (define t {}) (set t :k undefined)) "table-entry-guard"))
 
   (test-case "Default table constructor invokes <setmeta>"
     (define/checked c {<c> (:a 1)})

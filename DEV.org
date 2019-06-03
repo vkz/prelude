@@ -219,10 +219,24 @@ metachain. I wonder if such semantics would be interesting. Technically, we coul
 implement something like it simply by setting <insert> or any other metamethod for
 that matter to a procedure that does the deep metachain lookup for <insert>.
 
+*** TODO consider set semantics: undefined removes the entry
+
+This may actually proves great. No error would ever be thrown. Semantics are
+simple. Constructor becomes trivial: either silently ignore entries with undefined
+value or creat an (ht) without any check, then iterate and remove any entries with
+undefined on premise that there would typically be very few of them. I really like
+this.
+
+*** TODO set: guard against undefined
+CLOSED: [2019-06-03 Mon 15:19]
+- State "DONE"       from "STARTED"    [2019-06-03 Mon 15:19]
+:LOGBOOK:
+CLOCK: [2019-06-03 Mon 15:03]--[2019-06-03 Mon 15:19] =>  0:16
+:END:
+
 *** TODO consider <set> metamethod semantics
 
-We may want to offer <set> if only to allow <spec> guards whenever the value's
-modified. <set> takes 3 arguments: self (table), key and a new value. Since the
+<set> takes 3 arguments: self (table), key and a new value. Since the
 self argument is the table before the change, we may also guard the relationship
 between the old value and the new. This also hints that <insert> is redundant and
 amounts to (t:<set> k v) where t.k is undefined assuming we manage to completely
