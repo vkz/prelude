@@ -3,6 +3,7 @@
 
 (require racket/struct
          racket/generic
+         syntax/parse/define
          (for-syntax syntax/parse
                      racket/match)
          (only-in racket
@@ -10,7 +11,10 @@
                   [#%app racket/#%app]))
 
 
-(provide (rename-out (#%top top) (#%app app)))
+(provide #%top #%app #%table #%.
+         get set meta-get
+         <table>
+         tag?)
 
 
 (module+ test
@@ -25,41 +29,50 @@
   (define-syntax-class tag
     (pattern id:id
              #:when
-             (regexp-match #px"^[:]\\S+" (symbol->string (syntax->datum #'id)))))
+             (regexp-match #px"^[:]\\S+" (symbol->string (syntax->datum #'id))))))
 
-  (define (table-sep-key? id sep)
-    (define rx (format "^(.+)~a(.+)$" (regexp-quote sep)))
-    (match (symbol->string (syntax->datum id))
-      ((regexp rx (list _ table key))
-       (list
-        ;; table
-        (datum->syntax id (string->symbol table) id)
-        ;; tag key
-        (datum->syntax id (string->symbol (format ":~a" key)) id)
-        ;; sym key
-        (datum->syntax id (string->symbol key) id)))
-      (else #f)))
-
-  ;; TODO dry this - parameterizing by sep
-  (define-syntax-class table-colon-key
-    (pattern id:id
-             #:when (table-sep-key? #'id ":")
-             #:do [(match-define (list table tag key) (table-sep-key? #'id ":"))]
-             #:with table table
-             #:with key key
-             #:with tag tag))
-
-  (define-syntax-class table-dot-key
-    (pattern id:id
-             #:when (table-sep-key? #'id ".")
-             #:do [(match-define (list table tag key) (table-sep-key? #'id "."))]
-             #:with table table
-             #:with key key
-             #:with tag tag)))
 
 (define (tag? t)
   (and (symbol? t)
        (string-prefix? (symbol->string t) ":")))
+
+
+;;* #%. ---------------------------------------------------------- *;;
+
+
+(begin-for-syntax
+
+  (define (table-sep-key? id . seps)
+    (define (rx sep) (format "^(.+)~a(.+)$" (regexp-quote sep)))
+    (define idstr (symbol->string (syntax->datum id)))
+    (for/or ((sep (in-list seps)))
+      (match idstr
+        ((regexp (rx sep) (list _ table key))
+         ;; => (list "sep" "table" "key")
+         (list sep table key))
+        (else #f))))
+
+  (define-syntax-class (table-sep-key sep)
+    (pattern id:id
+             #:attr split (table-sep-key? #'id sep)
+             #:when (attribute split)
+             #:do [(match-define (list sep table key) (attribute split))]
+             #:with table (datum->syntax #'id (string->symbol table) #'id)
+             #:with tag   (datum->syntax #'id (string->symbol (format ":~a" key)) #'id)
+             #:with sym   (datum->syntax #'id (string->symbol key) #'id))))
+
+
+(define-syntax-parser #%.
+  ((_ "." (~var id (table-sep-key ".")))
+   (syntax/loc #'id (or? (get id.table 'id.tag)
+                         (get id.table 'id.sym))))
+  ((_ ":" (~var id (table-sep-key ":")))
+   (syntax/loc #'id
+     (let ((proc (or? (get id.table 'id.tag)
+                      (get id.table 'id.sym))))
+       (make-keyword-procedure
+        (λ (kws kw-args . rest) (keyword-apply proc kws kw-args id.table rest))
+        (λ args (apply proc id.table args)))))))
 
 
 ;;* #%top -------------------------------------------------------- *;;
@@ -68,19 +81,13 @@
 (define-syntax (#%top stx)
   (syntax-parse stx
 
-    ((_ . id:table-dot-key)
+    ((_ . id:id)
      ;; table.key =>
-     (syntax/loc stx (or? (get id.table 'id.tag)
-                          (get id.table 'id.key))))
-
-    ((_ . id:table-colon-key)
-     ;; table:key =>
-     (syntax/loc stx
-       (let ((proc (or? (get id.table 'id.tag)
-                        (get id.table 'id.key))))
-         (make-keyword-procedure
-          (λ (kws kw-args . rest) (keyword-apply proc kws kw-args id.table rest))
-          (λ args (apply proc id.table args))))))
+     #:attr split (table-sep-key? #'id "." ":")
+     #:when (attribute split)
+     #:with sep (car (attribute split))
+     #:with #%. (datum->syntax #'id '#%. #'id)
+     (syntax/loc #'id (#%. sep id)))
 
     ((_ . id:tag)
      ;; :tag =>
@@ -205,7 +212,7 @@
     (check-eq? (get: ta :a :c) 2)))
 
 
-;;* <get> metamethod --------------------------------------------- *;;
+;;* get ---------------------------------------------------------- *;;
 
 
 ;; TODO Default table struct constructor doesn't check the values in the table, so
@@ -232,7 +239,7 @@
           undefined)))
 
 
-;;* <set> metamethod --------------------------------------------- *;;
+;;* set ---------------------------------------------------------- *;;
 
 
 (define (set t key v)
@@ -313,7 +320,7 @@
 (define <table> (table (ht) undefined))
 
 
-;;* #%app -------------------------------------------------------- *;;
+;;* #%table ------------------------------------------------------ *;;
 
 
 (begin-for-syntax
@@ -336,6 +343,9 @@
      (syntax/loc stx (let* ((t (table (ht entry ...) mt))
                             (metamethod (or? (meta-get t :<setmeta>) identity)))
                        (metamethod t))))))
+
+
+;;* #%app -------------------------------------------------------- *;;
 
 
 (define-syntax (#%app stx)
