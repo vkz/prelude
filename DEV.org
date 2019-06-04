@@ -242,8 +242,20 @@ CLOSED: [2019-06-03 Mon 15:19]
 CLOCK: [2019-06-03 Mon 15:03]--[2019-06-03 Mon 15:19] =>  0:16
 :END:
 
-*** TODO consider <set> metamethod semantics
+*** DONE consider <set> metamethod semantics
+CLOSED: [2019-06-04 Tue 13:06]
+- State "DONE"       from "STARTED"    [2019-06-04 Tue 13:06] \\
+  Implemented <set> semantics and removed <insert> completely. Also implemented
+  dict-set! to disallow undefined values. This needs some thinking and more tests.
+- State "TODO"       from "STARTED"    [2019-06-04 Tue 10:08]
+:LOGBOOK:
+CLOCK: [2019-06-04 Tue 12:05]--[2019-06-04 Tue 13:06] =>  1:01
+CLOCK: [2019-06-04 Tue 09:39]--[2019-06-04 Tue 10:08] =>  0:29
+:END:
 
+- State "TODO"       from "IDEA"       [2019-06-04 Tue 09:30] \\
+  In light of <spec> implementation that may want to guard values being inserted and
+  set I should try <set>. I expect it to subsume <insert>.
 Big question is whether we need it at all. <set> and <insert> each can be
 implemented in terms of the other, so maybe consider keeping just one.
 
@@ -302,7 +314,8 @@ derive, at least I think so atm.
 This is something I need to try in action and see what works and what tricks I can
 employ. Anything I come up with now may prove unreasonable in practice.
 
-*** TODO consider <name> metamethod semantics
+*** IDEA consider <name> metamethod semantics
+CLOSED: [2019-06-03 Mon 17:00]
 
 Something to consider in context of error reporting. Be nice if tables could id
 themselves so that error messages could be enriched.
@@ -1236,14 +1249,28 @@ reflection then amounts to querying "in reverse" of the dispatch or maybe lettin
 you specify custom queries. In fact this may mean that we may need both SMT and
 /prolog/: former for dispatch, latter for reflection?
 
-** TODO Metatable hierarchies
+** TODO Metatable hierarchy
 
-*** TODO Metatable hierarchy for isa and isa?
+Swindle offers one such implementation but in terms of classes, obviously. This
+must include built-in Racket types and structs else it won't have much use.
 
-Swindle offers one such implementation but in terms of classes, obviously. This must
-include built-in Racket types and structs else it won't have much use.
+*** TODO Ground default hierarchy with base <table>
 
-*** TODO Extend . and :: syntax to builtins
+What should <table>'s metatable be? I'd rather not have it undefined. One possible
+solution is make it circular i.e. set it to itself:
+
+#+begin_src racket
+  (define <table> (table (ht) undefined))
+  (require racket/function)
+  (set-table-meta! <table> <table>)
+  ;; ground <get>
+  (set <table> :<get> (const undefined))
+#+end_src
+
+what other metamethods (if any) should it supply?
+
+*** IDEA Extend . and :: syntax to builtins
+CLOSED: [2019-06-04 Tue 15:12]
 
 Amounts to checking the metatable of the receiver:
 - usual if its a table already,
@@ -1360,6 +1387,53 @@ Probably just have ~isa~ cond with Racket predicates and return corresponding
 table e.g.
 
 * TIL in Racket
+
+** mutating a hash while iterating over it                        :TIL:
+
+is it ok? As expected its dangerous and should be avoided in most circumstances.
+[[https://docs.racket-lang.org/reference/hashtables.html][Per documentation]]:
+
+#+begin_quote
+A hash table can be used as a two-valued sequence (see Sequences). The keys and
+values of the hash table serve as elements of the sequence (i.e., each element is
+a key and its associated value). If a mapping is added to or removed from the hash
+table during iteration, then an iteration step may fail with exn:fail:contract, or
+the iteration may skip or duplicate keys and values. See also in-hash,
+in-hash-keys, in-hash-values, and in-hash-pairs.
+#+end_quote
+
+*** [[https://groups.google.com/forum/#!topic/racket-users/L6DMOYcEFbc][asked on list]]
+
+Is it ok to mutate a hash while iterating over it say in one of ~for~ forms?
+Specifically I want to filter (that is drop) some keys, but I'm also interested in
+mutation in general. I guess the answer lies in whether forms like ~in-dict~ etc
+create lazy streams that hold on to the table?
+
+Relevant docs that I managed to dig out:
+- hash-map seems to suggest that at least dropping keys is fine, but that only
+  talks about hash-map procedure specifically not other forms;
+- caveats concerning concurrent modifications maybe kinda relevant (I've asked
+  similar question about concurrency some time ago).
+
+Here're some examples to be concrete:
+#+begin_src racket
+  ;; IMO ok according to docs?
+  (hash-map h (λ (k v) (when (pred v) (hash-remove! h k))))
+
+  ;; probably ok assuming it translates to hash-map?
+  (dict-map h (λ (k v) (when (pred v) (dict-remove! h k))))
+
+  ;; is that ok?
+  (for (((k v) (in-dict h))
+        #:when (pred v))
+    (dict-remove! h k))
+
+  ;; defensive solution
+  (let ((fails (for/list (((k v) (in-dict h))
+                          #:when (pred v))
+                 k)))
+    (for-each (curry dict-remove! h) fails))
+#+end_src
 
 ** How (foo ...) expands in different situations                       :TIL:
 

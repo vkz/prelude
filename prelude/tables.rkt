@@ -12,7 +12,7 @@
 
 
 (provide #%top #%app #%table #%.
-         get set meta-get
+         get set meta-dict-ref
          <table>
          tag?)
 
@@ -124,15 +124,15 @@
   (apply generic (table-dict t) args))
 
 
-(define (meta-get t key)
+(define (meta-dict-ref t key)
   (define mt (table-meta t))
-  (and? mt (dict-ref mt key)))
+  (if (table? mt) (dict-ref mt key) undefined))
 
 
 (define table-procedure
   (make-keyword-procedure
    (λ (kws kw-args t . rest)
-     (let ((proc (meta-get t :<proc>)))
+     (let ((proc (meta-dict-ref t :<proc>)))
        (if (procedure? proc)
            ;; NOTE t here will always be bound to the table that was invoked as
            ;; procedure i.e. table whose metatable specifies (:<proc> proc) - a
@@ -161,8 +161,13 @@
    (define/generic iterate-key   dict-iterate-key)
    (define/generic iterate-value dict-iterate-value)
 
-   (define (dict-ref t key [default (λ () undefined)]) (ref (table-dict t) key default))
-   (define dict-set!          (redirect-generic set!))
+   (define (dict-ref t k [default (λ () undefined)])
+     (ref (table-dict t) k default))
+
+   (define (dict-set! t k v)
+     (define dict (table-dict t))
+     (if (undefined? v) (remove! dict k) (set! dict k v)))
+
    (define dict-has-key?      (redirect-generic has-key?))
    (define dict-remove!       (redirect-generic remove!))
    (define dict-iterate-first (redirect-generic iterate-first))
@@ -215,17 +220,12 @@
 ;;* get ---------------------------------------------------------- *;;
 
 
-;; TODO Default table struct constructor doesn't check the values in the table, so
-;; it will happily allow undefined their. We'll have to disallow undefined in
-;; whatever constructor we end up providing. We probably want this as the final
-;; step after any calls to <setmeta> to ensure user doesn't accidentally sets to
-;; undefined in the post-creation <setmeta> step.
-
-
 ;; TODO consider optional default proc argument?
 (define (get t key)
   (if (dict-has-key? t key)
       (dict-ref t key)
+      ;; TODO make this branch symmetrical with set, but remember to default look
+      ;; up the key on the metatable when metamethod is undefined
       (if (table? (table-meta t))
           (let* ((mt (table-meta t))
                  (metamethod (dict-ref mt :<get>)))
@@ -243,20 +243,13 @@
 
 
 (define (set t k v)
-  (if (undefined? v)
-      (dict-remove! (table-dict t) k)
-      (if (dict-has-key? t k)
-          (dict-set! t k v)
-          (if (table? (table-meta t))
-              (let* ((mt (table-meta t))
-                     (metamethod (dict-ref mt :<insert>)))
-                (cond
-                  ((table? metamethod) (set metamethod k v))
-                  ((procedure? metamethod) (metamethod t k v))
-                  ;; TODO should we signal an error?
-                  (else (dict-set! t k v))))
-              (dict-set! t k v))))
-  t)
+  (define metamethod (meta-dict-ref t :<set>))
+  (cond
+    ;; TODO is this too much, should we dict-set! to cut recursion?
+    ((table? metamethod) (set metamethod k v))
+    ((procedure? metamethod) (metamethod t k v))
+    ((undefined? metamethod) (dict-set! t k v) t)
+    (else (raise-argument-error '<set> "table or procedure" metamethod))))
 
 
 (define (rm t k) (set t k undefined))
@@ -289,7 +282,7 @@
     (check-eq? (get t<get>table :b) 2)
     (check-pred undefined? (get t<get>table :c)))
 
-  (test-case "set: with no <insert> metamethod"
+  (test-case "set: with no <set> metamethod"
     ;; insert
     (check-not-exn (thunk (set t :c 3)))
     (check-eq? (get t :c) 3)
@@ -297,8 +290,8 @@
     (check-not-exn (thunk (set t :a 0)))
     (check-eq? (get t :a) 0))
 
-  (test-case "set: when <insert> metamethod is a table"
-    (check-not-exn (thunk (set mt :<insert> mt)))
+  (test-case "set: when <set> is a table"
+    (check-not-exn (thunk (set mt :<set> mt)))
     ;; insert
     (check-not-exn (thunk (set t :d 4)))
     (check-eq? (get mt :d) 4)
@@ -308,10 +301,11 @@
     (check-eq? (get mt :d) 0)
     ;; update existing
     (check-not-exn (thunk (set t :a -1)))
-    (check-eq? (get t :a) -1))
+    (check-eq? (get t :a) 0)
+    (check-eq? (get mt :a) -1))
 
-  (test-case "set: when <insert> metamethod is a procedure"
-    (check-not-exn (thunk (set mt :<insert> (λ (_ k v) (set mt k v)))))
+  (test-case "set: when <set> is a procedure"
+    (check-not-exn (thunk (set mt :<set> (λ (_ k v) (set mt k v)))))
     (check-not-exn (thunk (set t :e 5)))
     (check-eq? (get mt :e) 5)
     (check-eq? (get t :e) 5)))
@@ -346,7 +340,7 @@
     ((_ mt:id entry:table-entry ...)
      (syntax/loc stx (let* ((h (ht entry ...))
                             (t (table h mt))
-                            (metamethod (or? (meta-get t :<setmeta>) identity))
+                            (metamethod (or? (meta-dict-ref t :<setmeta>) identity))
                             (undefs (for/list (((k v) (in-mutable-hash h))
                                                #:when (undefined? v))
                                       k)))
