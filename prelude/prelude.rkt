@@ -48,6 +48,12 @@
   (not (some? val)))
 
 
+;; TODO this is subtle, but IMO this is wrong, both or? and and? must return the
+;; last e without wrapping it in some?. If it happens to be undefined then that is
+;; what's returned? Would it make for better semantics in context of tables. This
+;; would make these forms infectios though, so you wouldn't be able to mix them
+;; with normal Racket boolean forms. Should we have or/undefined and and/undefined
+;; instead?
 (define-syntax-rule (or? e ...)
   (or (some? e) ...))
 

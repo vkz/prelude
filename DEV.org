@@ -8,6 +8,18 @@ PRELUDE  -*- mode: org; fill-column: 82 -*-
 
 * Prelude
 
+** TODO consider undefined friendly or? and? semantics
+
+this is subtle but when used with tables that return ~undefined~ on key missing
+both or? and and? must return the last argument without wrapping it in some? -
+that is the resut should not be converted to boolean #t or #f. If it happens to be
+undefined then that is what's returned. It may make for better semantics in
+context of tables, however this would make these forms infectios, so you wouldn't
+be able to mix them with normal Racket boolean forms. Should we have or/undefined
+and and/undefined instead?
+
+It is almost like I'm proposing teriary logic, sigh.
+
 ** DONE :tag trick
 CLOSED: [2019-04-29 Mon 15:50]
 

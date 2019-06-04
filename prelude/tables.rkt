@@ -220,28 +220,24 @@
 ;;* get ---------------------------------------------------------- *;;
 
 
-;; TODO consider optional default proc argument?
-(define (get t key)
-  (if (dict-has-key? t key)
-      (dict-ref t key)
-      ;; TODO make this branch symmetrical with set, but remember to default look
-      ;; up the key on the metatable when metamethod is undefined
-      (if (table? (table-meta t))
-          (let* ((mt (table-meta t))
-                 (metamethod (dict-ref mt :<get>)))
-            (if? metamethod
-                 (cond
-                   ((table? metamethod) (get metamethod key))
-                   ((procedure? metamethod) (metamethod t key))
-                   ;; TODO should error here instead?
-                   (else undefined))
-                 (get mt key)))
-          undefined)))
+(define (get t k)
+  (if (dict-has-key? t k)
+      (dict-ref t k)
+      (let ((mt (table-meta t))
+            ;; we rely on meta-dict-ref returning undefined when mt is not a table
+            (metamethod (meta-dict-ref t :<get>)))
+        (cond
+          ((table? metamethod) (get metamethod k))
+          ((procedure? metamethod) (metamethod t k))
+          ((undefined? metamethod) (if (table? mt) (get mt k) undefined))
+          (else (raise-argument-error '<get> "table or procedure" metamethod))))))
 
 
 ;;* set ---------------------------------------------------------- *;;
 
 
+;; NOTE set : (table? k v . -> . table?) which means <set> metamethod must comply
+;; with that contract
 (define (set t k v)
   (define metamethod (meta-dict-ref t :<set>))
   (cond
