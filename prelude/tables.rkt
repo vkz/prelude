@@ -394,3 +394,87 @@
   (test-case "Use #%table from macro invocation context"
     (let-syntax ([#%table (syntax-rules () [(_ mt entry ...) (ht entry ...)])])
       (check-equal? (ht (:a 1)) {(:a 1)}))))
+
+
+;;* <spec> ------------------------------------------------------- *;;
+
+
+;; TODO better error reports needed: k, v, predicate that failed. I bet contracts
+;; RHS should be able to capture which subcontract failed exactly, but I dunno
+;; how that works. Ditto contract error reporting facilities.
+
+
+(define <spec>
+  {(:<proc> (case-lambda
+              ((spec t)
+               (for (((k pred?) (in-dict spec)))
+                 ;; TODO should this be get instead of dict-ref?
+                 (unless (pred? (dict-ref t k))
+                   (error '#%table "slot ~a violated its contract" k)))
+               t)
+              ((spec t k v)
+               (define pred? (or? (dict-ref spec k) (const #t)))
+               (unless (pred? v)
+                 (error 'set "slot ~a violated its contract" k))
+               t)))})
+
+
+(define <only>
+  {(:<proc> (case-lambda
+              ((spec t)
+               (define slots (list->mutable-seteq (dict-keys t)))
+               (for (((k pred?) (in-dict spec)))
+                 (unless (pred? (dict-ref t k))
+                   (error '#%table "slot ~a violated its contract" k))
+                 (set-remove! slots k))
+               (unless (set-empty? slots)
+                 (error '#%table "slots ~a not allowed by <spec>" (set->list slots)))
+               t)
+              ((spec t k v)
+               (define pred? (or? (dict-ref spec k)
+                                  (const (error 'set "slot ~a not allowed by <spec>" k))))
+               (unless (pred? v)
+                 (error 'set "slot ~a violated its contract" k))
+               t)))})
+
+
+(module+ test
+
+  (test-case "<spec>"
+    (define/checked <mt> {(:check {<spec> (:a (or/c undefined? natural?))
+                                          (:b (or/c undefined? symbol?))
+                                          (:c symbol?)})
+                          ;; TODO why this fails?
+                          ;; (:<setmeta> t:check)
+                          ;; (:<set> t:check)
+                          (:<setmeta> (λ (t) (t:check)))
+                          (:<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))})
+    (define/checked t {<mt> (:a 1) (:c 'c)})
+    ;; :c must be present
+    (check-exn exn? (thunk {<mt>}) "slot :c violated its contract")
+    ;; :c and :b must be symbols
+    (check-exn exn? (thunk {<mt> (:c 42)}) "slot :c violated its contract")
+    (check-exn exn? (thunk (set t :c 42))  "slot :c violated its contract")
+    (check-exn exn? (thunk (set t :b 42))  "slot :c violated its contract")
+    ;; happy path
+    (check-eq? t.c 'c)
+    (check-eq? (get (set t :b 'b) :b) 'b))
+
+
+  (test-case "<only>"
+    (define/checked <mt> {(:check {<only> (:a (or/c undefined? natural?))
+                                          (:b (or/c undefined? symbol?))
+                                          (:c symbol?)})
+                          (:<setmeta> (λ (t) (t:check)))
+                          (:<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))})
+    (define/checked t {<mt> (:a 1) (:c 'c)})
+    ;; only speced slots allowed
+    (check-exn exn? (thunk {<mt> (:a 1) (:d 4)}) "slots (:d) not allowed")
+    (check-exn exn? (thunk (set t :d 4)) "slot :d not allowed")
+    ;; otherwise like <spec>
+    (check-exn exn? (thunk {<mt>}) "slot :c violated its contract")
+    (check-exn exn? (thunk {<mt> (:c 42)}) "slot :c violated its contract")
+    (check-exn exn? (thunk (set t :c 42))  "slot :c violated its contract")
+    (check-exn exn? (thunk (set t :b 42))  "slot :c violated its contract")
+    (check-eq? t.c 'c)
+    (check-eq? (get (set t :b 'b) :b) 'b)))
