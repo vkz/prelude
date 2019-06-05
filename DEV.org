@@ -495,18 +495,28 @@ Expand into ~#%table~, which we expose and let the user override.
 (#%table ...)
 #+end_src
 
-*** TODO <spec> metatable and possibly #:spec keyword arg
+*** TODO #:check syntax for <spec>
+
+*** DONE <spec> metatable
+CLOSED: [2019-06-05 Wed 10:07]
+- State "DONE"       from "STARTED"    [2019-06-05 Wed 10:07] \\
+  Seems to work, but uncovered some issues with #%. and t:check is somehow broken,
+  so need to debug. Error reporting is basic atm and may need some heavy leaning on
+  contract facilities.
+- State "TODO"       from "STARTED"    [2019-06-04 Tue 18:06] \\
+  Made progress but looks like #%. is buggy - or? fails me again.
 - State "TODO"       from "STARTED"    [2019-06-02 Sun 10:52] \\
   Sketched how spec might work
 :LOGBOOK:
+CLOCK: [2019-06-05 Wed 09:50]--[2019-06-05 Wed 10:07] =>  0:17
+CLOCK: [2019-06-04 Tue 16:23]--[2019-06-04 Tue 18:36] =>  2:13
 CLOCK: [2019-06-02 Sun 08:35]--[2019-06-02 Sun 10:52] =>  2:17
 :END:
 
 With spec we achieve two things:
 1. communicate what instance slots we expect,
 2. guard (or contract) slots when instance is constructed,
-3. potentially guard slots when they are inserted or set (which hints that just
-   having <insert> may not be enough and <set> is indeed required).
+3. potentially guard slots when they are inserted, updated, removed.
 
 Even if only for "in-code" documentation. Note we are specing slots for the
 instance not the metatable. If we wanted them to be present on the metatable we'd
@@ -537,26 +547,78 @@ probably just set them right there and then.
                             (:<set> (λ (t k v) (t:check k v)))})
 
   ;; We could also provide a shortcut, so that user doesn't have to supply
-  ;; <setmeta>, <set> and <insert> which would be the same every time.
-  (define <mt> {<deeper-mt> #:spec ((:foo string?)
-                                    (:bar (or undefined? natural?)))})
+  ;; <setmeta> and <set> metamethods.
+  (define <mt> {<deeper-mt> #:check {<spec> (:foo string?)
+                                            (:bar (or undefined? natural?))}})
 
   ;; Finally we create an instance whose slots would be checked
   (define t {<mt> (:foo "foo") (:bar 42)})
 #+end_src
 
+Proposed implementation of <spec> and #:check actually allow several cool things:
+- user may supply their own table instead of <spec>, all it needs to do is define
+  <proc> of arity 1 and 3;
+- having specified #:check user may either remove :<setmeta> and (or) :<set> to
+  avoid overhead or set them to e.g. (const #t).
+
 Could we leverage Racket contract system here?
+
+**** TODO required / optional combinators for <spec> predicates
 
 By default we assume every slot is possible, but not required, an alternative
 could be defined by disjunction of undefined (signaling allowed absense) with
 predicate (that must be satisfied when slot is present). Contract or predicate by
 itself then signals a required slot. This is certainly more verbose, though.
 
-*** IDEA #:closed or #:sealed arg
-CLOSED: [2019-06-02 Sun 09:49]
+Possible implementation:
+#+begin_src racket
+  (define (required . contract) (apply and/c (compose not undefined?) contract))
+  (define ! required)
 
-Tables default to be open maps. #:closed would signal that only declared or speced
-slots are allowed.
+  (define (optional . contract) (apply or/c undefined? contract))
+  (define ? optional)
+
+  ;; now we should be able to use these in <spec>
+
+  (required (or/c string? number?))
+  ;; or
+  (! (or/c string? number?))
+  ;; =>
+  (and/c (compose not undefined?) (or/c string? number?))
+
+  (optional (or/c string? number?))
+  ;; or
+  (? (or/c string? number?))
+  ;; =>
+  (or/c undefined? (or/c string? number?))
+
+  ;; example
+  (define <mt> {<foo> #:check {<spec> (:optional (? (or/c string? symbol?)))
+                                      (:required (! number?))}})
+#+end_src
+
+**** TODO required / optional combinator syntax
+
+We could make them more pleasant to use by also having ~optional~ and ~required~
+as id-transformers so they may appear on their own (ditto ? and !):
+
+#+begin_src racket
+  {<spec> (:optional ?)
+          (:required !)}
+  ;; =>
+  {<spec> (:optional any/c)
+          (:required (compose not undefined?))}
+#+end_src
+
+*** DONE <only> metatable derived from <spec> to seal instances
+CLOSED: [2019-06-05 Wed 10:09]
+
+- State "DONE"       from "TODO"       [2019-06-05 Wed 10:09]
+Note that by default tables are "open", so any slot not explicitly ~required~ by
+the predicate in <spec> may still be added to the table, that is any slot not in
+<spec> is implicitly ~any/c~. We could trivially close or seal the table to only
+"speced" slots by deriving a new metatable from <spec> e.g. <only> with <proc>
+metamethod doing necessary checks!
 
 ** . : .. :: syntax
 

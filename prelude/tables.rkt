@@ -70,6 +70,8 @@
    (syntax/loc #'id
      (let ((proc (or? (get id.table 'id.tag)
                       (get id.table 'id.sym))))
+       (unless (procedure? proc)
+         (raise-result-error 'id "procedure?" proc))
        (make-keyword-procedure
         (λ (kws kw-args . rest) (keyword-apply proc kws kw-args id.table rest))
         (λ args (apply proc id.table args)))))))
@@ -444,9 +446,6 @@
     (define/checked <mt> {(:check {<spec> (:a (or/c undefined? natural?))
                                           (:b (or/c undefined? symbol?))
                                           (:c symbol?)})
-                          ;; TODO why this fails?
-                          ;; (:<setmeta> t:check)
-                          ;; (:<set> t:check)
                           (:<setmeta> (λ (t) (t:check)))
                           (:<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))})
     (define/checked t {<mt> (:a 1) (:c 'c)})
