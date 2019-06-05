@@ -48,18 +48,34 @@
   (not (some? val)))
 
 
-;; TODO this is subtle, but IMO this is wrong, both or? and and? must return the
-;; last e without wrapping it in some?. If it happens to be undefined then that is
-;; what's returned? Would it make for better semantics in context of tables. This
-;; would make these forms infectios though, so you wouldn't be able to mix them
-;; with normal Racket boolean forms. Should we have or/undefined and and/undefined
-;; instead?
-(define-syntax-rule (or? e ...)
-  (or (some? e) ...))
+(define-syntax or?
+  (syntax-rules ()
+    ((_ e) e)
+    ((_ e1 e ...) (or (some? e1) (or? e ...)))))
 
 
-(define-syntax-rule (and? e ...)
-  (and (some? e) ...))
+(define-syntax and?
+  (syntax-rules ()
+    ((_ e) e)
+    ((_ e1 e ...) (let ((test e1))
+                    (if (some? test) (and? e ...) test)))))
+
+(module+ test
+  (test-case "or? and? combinators"
+    ;; or?
+    (check-eq? (or? undefined #f 42) 42)
+    (check-eq? (or? 42) 42)
+    (check-eq? (or? #f) #f)
+    (check-eq? (or? undefined) undefined)
+    (check-eq? (or? #f undefined) undefined)
+    (check-eq? (or? undefined #f undefined) undefined)
+    ;; and?
+    (check-eq? (and? 42) 42)
+    (check-eq? (and? #f) #f)
+    (check-eq? (and? undefined) undefined)
+    (check-eq? (and? undefined #f undefined) undefined)
+    ;; or? and? combined
+    (check-eq? (and? (or? undefined 42) (or? undefined) 42) undefined)))
 
 
 (define-syntax-rule (if? test then else)

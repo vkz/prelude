@@ -8,8 +8,20 @@ PRELUDE  -*- mode: org; fill-column: 82 -*-
 
 * Prelude
 
-** TODO consider undefined friendly or? and? semantics
+** DONE consider undefined friendly or? and? semantics
+CLOSED: [2019-06-05 Wed 10:50]
 
+- State "DONE"       from "TODO"       [2019-06-05 Wed 10:50] \\
+  ATM or? skips any internal undefined as if it were #f but returns the final
+  expression if reached, so it could be undefined; and? short circuits the moment it
+  sees #f or undefined returning undefined in the latter case. This is consistent
+  with default Racket or and, however they cannot be mixed with or? and? combinators
+  since the former treat undefined as #t. Effectively or? and? implement ternary
+  logic or something. To use the result of or? and? combinators in Racket's ~or~
+  ~and~ the results must be wrapped in e.g. ~some?~ who always returns #t or #f.
+  That raises the question of consistency: shouldn't some? return undefined? I am a
+  bit wary of the whole thing but it does let me avoid contaminating code with
+  checks for undefined.
 this is subtle but when used with tables that return ~undefined~ on key missing
 both or? and and? must return the last argument without wrapping it in some? -
 that is the resut should not be converted to boolean #t or #f. If it happens to be
