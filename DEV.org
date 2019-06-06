@@ -449,7 +449,59 @@ once you go into production and made sure no undefine can ever occur in the
 constructor. Still pretty dangerous but maybe a reasonable trade-off a-la
 unchecked integer ops etc.
 
+*** TODO Useful #:kw option semantics?
+
+Like I observed these appear to largely reproduce the <setmeta> behavior, then
+question becomes whether we even need them and what semantics would make them
+useful?
+
+Here's one idea. Instead of having external table with handlers allow any keywords
+at all with only two type of options possible:
+1. #:kw table - means invoke table.<setmeta> as the final constructor step,
+2. #:kw function - means invoke function as the final constructors step.
+
+However 1. has a problem: atm <setmeta> only takes table instance being
+constructed as the only argument, but we almost certainly want to pass the
+table-option as an extra argument - that is we potentially want <setmeta> to be
+able to refer to self (aka option, aka table where <setmeta> appears). Technically
+this is very possible because when that option table itself gets created its
+metatable <setmeta> is run and it has access to table option instance obviously,
+then it could install <setmeta> that closes over the instance on the instance.
+Here's a <spec> example, but it is bananas convoluted - noone will ever be able to
+just read and understand wtf is happening:
+
+#+begin_src racket
+  (define <spec>
+    {(:<proc> (case-lambda))
+     (:<setmeta> (λ (spec-inst)
+                   (set spec-inst :<setmeta>
+                        (λ (mt)
+                          ;; remove :<setmeta> slot from :check table - ugly
+                          (rm spec-inst :<setmeta>)
+                          (set mt :check spec-inst)
+                          (set mt :<setmeta> (λ (t) (t:check)))
+                          (set mt :<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))))))})
+
+  ;; now this
+  (define <m> {#:check {<spec> (:a (or/c undefined? natural?))
+                               (:b (or/c undefined? symbol?))
+                               (:c symbol?)}})
+  ;; =>
+  (define <m>
+    {#:check {#;<spec>
+              (:<setmeta> (λ (mt)
+                            ;; remove :<setmeta> slot from :check table - ugly
+                            (rm spec-inst :<setmeta>)
+                            (set mt :check spec-inst)
+                            (set mt :<setmeta> (λ (t) (t:check)))
+                            (set mt :<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))))}})
+
+  ;; then this would run checks as expected
+  (define t {<m> (:a 1) (:c 'c)})
+#+end_src
+
 *** TODO Allow #:kw args in {} constructors
+- State "TODO"       from "STARTED"    [2019-06-05 Wed 17:40]
 - State "TODO"       from "STARTED"    [2019-06-02 Sun 11:54] \\
   It's actually not obvious how to allow #:kw args under the assumption that users
   may want to extend the set of such args with their own keywords. First we need to
@@ -466,6 +518,7 @@ unchecked integer ops etc.
 - State "TODO"       from "STARTED"    [2019-06-01 Sat 20:38] \\
   Moved actual parsing into #%table.
 :LOGBOOK:
+CLOCK: [2019-06-05 Wed 14:00]--[2019-06-05 Wed 17:40] =>  3:40
 CLOCK: [2019-06-02 Sun 11:32]--[2019-06-02 Sun 11:54] =>  0:22
 CLOCK: [2019-06-01 Sat 20:16]--[2019-06-01 Sat 20:38] =>  0:22
 :END:
@@ -946,6 +999,44 @@ hopeless.
 So for now at least lets keep multiple inheritance lookup separate from dispatch
 and method combinations. Multiple inheritance gives us very clear and precise
 semantics for simple method lookup and precedence.
+
+** TODO <mixin> and <trait>
+
+As I've observed while adding #:kw options to {} table constructors their
+(probably) most likely use is to basically mix in some behaviours that augment or
+enrich whatever metatable provides. What #:kw options do is essentially wrapping
+the table instance in handler functions to produce an augmented table - think
+middleware pattern of sorts. But that is essentially whan <setmeta> metamethod is
+for so we end up duplicating functionality we already have. And it happens as a
+final step in #%table constructor exactly like <setmeta>.
+
+This hints at possibility of having the #:kw option behavior a-la <spec> with
+tables only - no keyword args necessary. I believe what I'm after are called
+mixins and traits.
+
+E.g. [[file:~/Code/racket/racket/doc/guide/classes.html?q=mixin#%2528part._.Mixins%2529][Racket mixins]] and [[file:~/Code/racket/racket/doc/guide/classes.html?q=mixin#%2528part._.Traits%2529][Racket traits]]. Of course in table setting these will
+probably have their own semantics. What should that be?
+
+Of course we can already manipulate tables in whatever way we like, that is any
+mixin or traits semantics maybe reproduced by mixing tables and function calls
+that manipulate said tables. Question here is whether there are particularly
+interesting semantics for which we may want to provide a systematic and readable
+encoding.
+
+For example even with simple functions our <spec> idea is trivial to implement and
+use:
+#+begin_src racket
+  (define (speced spec (mt <table>))
+    (unless (isa? spec <spec>) (error "<spec> required"))
+    {mt (:check spec)
+        (:<setmeta> (λ (t) (t:check)))
+        (:<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))})
+
+  (define <mt> (speced {<spec> (:a (or/c undefined? natural?))
+                               (:b (or/c undefined? symbol?))
+                               (:c symbol?)}
+                       <table>))
+#+end_src
 
 ** Multiple dispatch
 
