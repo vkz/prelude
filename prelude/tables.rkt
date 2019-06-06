@@ -22,6 +22,14 @@
   (require prelude/testing))
 
 
+(begin-for-syntax
+  (require racket/logging)
+  (define (log v)
+    (with-logging-to-port (current-output-port)
+      (λ () (log-debug "~a" v))
+      'debug)))
+
+
 ;;* :tags -------------------------------------------------------- *;;
 
 
@@ -320,8 +328,14 @@
 
 (begin-for-syntax
 
-  ;; TODO this does not cover #:kw arguments but we should capture them and simply
-  ;; pass  along to #%table constructor.
+  (define-splicing-syntax-class option
+    ;; #:attributes ((kw 1) (opt 1))
+    (pattern
+     (~describe #:role "keyword option pair"
+                "#:kw expr"
+                (~seq kw:keyword opt:expr))))
+
+
   (define-syntax-class table-entry
     #:attributes (key value)
     (pattern
@@ -330,22 +344,41 @@
                 ((~and key:expr (~not (~literal quote))) value:expr)))))
 
 
+(define #%table-keyword-traits (ht))
+
+
+(define-simple-macro (define-keyword-trait kw:keyword e:expr)
+  (let ((proc e))
+    (unless (procedure? e)
+      (raise-argument-error 'define-keyword-trait "procedure?" proc))
+    (dict-set! #%table-keyword-traits 'kw e)))
+
+
+(define (add-traits t opts)
+  (for/fold ((t t))
+            (((kw opt) (in-dict opts)))
+    (define handler (dict-ref #%table-keyword-traits kw))
+    (let ((handled (handler t opt)))
+      (unless (eq? handled t)
+        (error "expected handler to return the same table instance"))
+      t)))
+
+
 (define-syntax (#%table stx)
   (syntax-parse stx
     #:context (list '|{}| (with-syntax (((_ e ...) stx))
                             ;; doesn't seem to effect paren shape in error msg
                             (syntax-property (syntax/loc stx {e ...}) 'paren-shape #\{)))
-    ((_ mt:id entry:table-entry ...)
-     (syntax/loc stx (let* ((h (ht entry ...))
+    ((_ mt:id options:option ... entry:table-entry ...)
+     (syntax/loc stx (let* ((opts (ht ('options.kw options.opt) ...))
+                            (h (ht entry ...))
                             (t (table h mt))
                             (metamethod (or? (meta-dict-ref t :<setmeta>) identity))
                             (undefs (for/list (((k v) (in-mutable-hash h))
                                                #:when (undefined? v))
                                       k)))
                        (for-each (curry dict-remove! h) undefs)
-                       ;; Or ok according to docs to drop keys like this:
-                       ;; (hash-map h (λ (k _) (dict-remove! h k)))
-                       (metamethod t))))))
+                       (add-traits (metamethod t) opts))))))
 
 
 ;;* #%app -------------------------------------------------------- *;;
@@ -421,6 +454,7 @@
                t)))})
 
 
+;; TODO inherit from <spec> so (isa? {<only>} <spec>) => #t
 (define <only>
   {(:<proc> (case-lambda
               ((spec t)
@@ -438,6 +472,27 @@
                (unless (pred? v)
                  (error 'set "slot ~a violated its contract" k))
                t)))})
+
+
+(define-keyword-trait #:check
+  (λ (t option)
+    ;; (unless (isa? option <spec>) (error "<spec> expected"))
+    (set t :check option)
+    (set t :<setmeta> (λ (t) (t:check)))
+    (set t :<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))))
+
+
+(comment
+ (define <m> {#:check {<spec> (:a (or/c undefined? natural?))
+                              (:b (or/c undefined? symbol?))
+                              (:c symbol?)}})
+ ;; TODO trace shows expanded result here which is not helpful, try to manipulate
+ ;; #:context in macros to get something better?
+ ;; {<m>}
+ (define ttt {<m> (:a 1) (:c 'c)})
+ (set ttt :c 42)
+ ;; comment
+ )
 
 
 (module+ test
