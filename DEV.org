@@ -1474,6 +1474,58 @@ table e.g.
 
 * TIL in Racket
 
+** logging e.g. at macro expansion time                                :TIL:
+
+There are loggers with the default (current-logger) and there are receivers, which
+are synchronizable events so you need to asynchronously sync to receive anything
+from a logger.
+
+First, (current-logger) is usually what you want and should be the one you are
+logging to. Otherwise to receive you need to create a receiver for some topic and
+sync it in a loop in a separate thread. Log messages either with e.g. log-debug
+and friends which take strings or with a more general log-message that may take
+data, too.
+
+Be careful when logging at macro expansion time. Receiver and its thread must run
+their, not at runtime, cause expansion happens before runtime.
+
+#+begin_src racket
+  ;; assume we are logging events while expanding macros
+  (begin-for-syntax
+    (define receiver-thread
+      (thread (λ ()
+                (define macro-receiver (make-log-receiver (current-logger) 'debug 'macro))
+                (let loop ()
+                  (println (sync macro-receiver))
+                  (loop)))))
+    ;; could be useful to ensure the thread actually starts before we log anything
+    (sleep 2))
+
+  ;; now from inside the macro we could log
+  (log-debug "~a" (syntax->datum #'(list (list 'options.kw options.opt) ...)))
+#+end_src
+
+It is possible to avoid starting a thread by using ~with-logging-to-port~ which is
+what you want for debugging anyway:
+
+#+begin_src racket
+  (with-logging-to-port (current-output-port)
+    (λ ()
+      (log-debug "~a" (syntax->datum #'(list (list 'options.kw options.opt) ...))))
+    'debug)
+#+end_src
+
+And of course we could simlify it:
+
+#+begin_src racket
+  (define (log v)
+    (with-logging-to-port (current-output-port)
+      (λ () (log-debug "~a" v))
+      'debug))
+
+  (log (syntax->datum #'(list (list 'options.kw options.opt) ...)))
+#+end_src
+
 ** mutating a hash while iterating over it                        :TIL:
 
 is it ok? As expected its dangerous and should be avoided in most circumstances.
