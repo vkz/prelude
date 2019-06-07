@@ -524,3 +524,48 @@
     (check-exn exn? (thunk (set t :b 42))  "slot :c violated its contract")
     (check-eq? t.c 'c)
     (check-eq? (get (set t :b 'b) :b) 'b)))
+
+
+;;** - ? and ! combinators --------------------------------------- *;;
+
+
+(define (required . c) (apply and/c (compose not undefined?) c))
+(define (optional . c)
+  (define contract (if (empty? c) (list any/c) c))
+  (apply or/c undefined? contract))
+
+
+(define-syntax-parser !
+  ((_ c:expr ...) (syntax/loc this-syntax (required c ...)))
+  (_:id (syntax/loc this-syntax (required))))
+
+
+(define-syntax-parser ?
+  ((_ c:expr ...) (syntax/loc this-syntax (optional c ...)))
+  (_:id (syntax/loc this-syntax (optional))))
+
+
+(module+ test
+  (test-case "? and ! contract combinators"
+    (define/checked string-or-num! (required (or/c string? number?)))
+    (define/checked string-or-num? (optional (or/c string? number?)))
+    (check-true (string-or-num! 42))
+    (check-true (string-or-num! ""))
+    (check-false (string-or-num! undefined))
+    (check-true (string-or-num? undefined))
+    (check-false (string-or-num? 's))
+    (check-false ((!) undefined))
+    (check-true ((?) undefined))
+    (check-true ((?) 42))
+
+    (define/checked <mt> {#:check {<open> (:? (? (or/c string? symbol?)))
+                                          (:! (! number?))}})
+    (check-exn exn? (thunk {<mt>}) "slot :! violated its contract")
+    (check-exn exn? (thunk {<mt> (:! 1) (:? 2)}) "slot :? violated its contract")
+    (check-eq? (get {<mt> (:! 42)} :!) 42)
+
+    (define/checked <mtt> {#:check {<open> (:? ?)
+                                           (:! !)}})
+    (check-exn exn? (thunk {<mtt>}) "slot :! violated its contract")
+    (check-eq? (get {<mtt> (:! '!)} :!) '!)
+    (check-eq? (get {<mtt> (:! '!) (:? '?)} :?) '?)))

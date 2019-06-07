@@ -200,7 +200,7 @@ CLOCK: [2019-05-30 Thu 15:08]--[2019-05-30 Thu 15:09] =>  0:01
 to serve as "raw" operations - the kind that only works on the main contained and
 is oblivious to metatables and inheritance. Think ~rawget~ and ~rawset~ in Lua.
 
-** TODO Basic metatable semantics
+** Basic metatable semantics
 
 *** DONE default <get> metamethod semantics
 CLOSED: [2019-05-30 Thu 16:14]
@@ -344,7 +344,8 @@ CLOSED: [2019-06-03 Mon 17:00]
 Something to consider in context of error reporting. Be nice if tables could id
 themselves so that error messages could be enriched.
 
-*** TODO default <isa?> metamethod semantics
+*** IDEA default <isa?> metamethod semantics
+CLOSED: [2019-06-07 Fri 09:37]
 
 This is to test for "subtyping" essentially:
 #+begin_src racket
@@ -643,7 +644,12 @@ Proposed implementation of <spec> and #:check actually allow several cool things
 
 Could we leverage Racket contract system here?
 
-**** TODO required / optional combinators for <spec> predicates
+**** DONE required / optional combinators for <spec> predicates
+CLOSED: [2019-06-07 Fri 11:07]
+- State "DONE"       from "STARTED"    [2019-06-07 Fri 11:07]
+:LOGBOOK:
+CLOCK: [2019-06-07 Fri 10:11]--[2019-06-07 Fri 11:07] =>  0:56
+:END:
 
 By default we assume every slot is possible, but not required, an alternative
 could be defined by disjunction of undefined (signaling allowed absense) with
@@ -677,8 +683,10 @@ Possible implementation:
                                       (:required (! number?))}})
 #+end_src
 
-**** TODO required / optional combinator syntax
+**** DONE required / optional combinator syntax
+CLOSED: [2019-06-07 Fri 11:07]
 
+- State "DONE"       from "TODO"       [2019-06-07 Fri 11:07]
 We could make them more pleasant to use by also having ~optional~ and ~required~
 as id-transformers so they may appear on their own (ditto ? and !):
 
@@ -701,6 +709,18 @@ the predicate in <spec> may still be added to the table, that is any slot not in
 metamethod doing necessary checks!
 
 ** . : .. :: syntax
+
+*** TODO Implement define/table
+
+**** TODO allow id-style (define t.k val)
+
+**** TODO allow function-nesting (define ((foo.bar a) b) body)
+
+**** TODO replace Racket's define
+
+*** TODO Expand t..k and t::k syntax
+
+*** TODO Implement t..k and t::k semantics
 
 *** DONE Implement default #%. accessor semantics
 CLOSED: [2019-06-03 Mon 10:34]
