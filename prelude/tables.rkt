@@ -70,14 +70,31 @@
              #:with sym   (datum->syntax #'id (string->symbol key) #'id))))
 
 
+;; TODO is this too repetitive? At least its clear. Probably need . .. : :: ops in
+;; app position to do it. Also not happy with how #%top and #%. interact.
 (define-syntax-parser #%.
   ((_ "." (~var id (table-sep-key ".")))
    (syntax/loc #'id (or? (get id.table 'id.tag)
                          (get id.table 'id.sym))))
+
+  ((_ ".." (~var id (table-sep-key "..")))
+   (syntax/loc #'id (or? (get (or? (table-meta id.table) {}) 'id.tag)
+                         (get (or? (table-meta id.table) {}) 'id.sym))))
+
   ((_ ":" (~var id (table-sep-key ":")))
    (syntax/loc #'id
      (let ((proc (or? (get id.table 'id.tag)
                       (get id.table 'id.sym))))
+       (unless (procedure? proc)
+         (raise-result-error 'id "procedure?" proc))
+       (make-keyword-procedure
+        (λ (kws kw-args . rest) (keyword-apply proc kws kw-args id.table rest))
+        (λ args (apply proc id.table args))))))
+
+  ((_ "::" (~var id (table-sep-key "::")))
+   (syntax/loc #'id
+     (let ((proc (or? (get (or? (table-meta id.table) {}) 'id.tag)
+                      (get (or? (table-meta id.table) {}) 'id.sym))))
        (unless (procedure? proc)
          (raise-result-error 'id "procedure?" proc))
        (make-keyword-procedure
@@ -93,7 +110,7 @@
 
     ((_ . id:id)
      ;; table.key =>
-     #:attr split (table-sep-key? #'id "." ":")
+     #:attr split (table-sep-key? #'id ".." "::" "." ":")
      #:when (attribute split)
      #:with sep (car (attribute split))
      #:with #%. (datum->syntax #'id '#%. #'id)
@@ -123,7 +140,15 @@
     (check-eq? (t.f t :a) 1)
     (check-eq? (t:f :a) 1)
     (check-eq? (t.proc t :a) 1)
-    (check-eq? (t:proc :a) 1)))
+    (check-eq? (t:proc :a) 1))
+
+  (test-case "t..k and t::k accessors"
+    (define <mt> {(:a 1)
+                  (:f (λ (t k) (get t k)))})
+    (define t {<mt>})
+    (check-eq? t..a 1)
+    (check-eq? (t..f t :a) 1)
+    (check-eq? (t::f :a) 1)))
 
 
 ;;* table struct ------------------------------------------------- *;;
@@ -394,6 +419,9 @@
 
       ;; parse {#%app}
       (syntax-parse stx
+
+        ;; TODO parse mt, #:kw traits and entries here then call #%table with
+        ;; those parsed - would simplify implementing custom #%table.
 
         ;; TODO would it make sense to use <table> binding at the call site?
         ;; Thereby allowing the user to swap it for something else? Beware
