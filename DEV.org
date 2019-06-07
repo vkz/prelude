@@ -449,7 +449,14 @@ once you go into production and made sure no undefine can ever occur in the
 constructor. Still pretty dangerous but maybe a reasonable trade-off a-la
 unchecked integer ops etc.
 
-*** TODO Useful #:kw option semantics?
+*** DONE Useful #:kw option semantics?
+CLOSED: [2019-06-07 Fri 08:39]
+
+- State "DONE"       from "TODO"       [2019-06-07 Fri 08:39] \\
+  cut external traits for now - I don't like the idea of a global table where
+  everyone could step on each outher's toes. It is also effectively subsumed by
+  allowing adhoc keywords with functions for traits. I am concerned with table
+  semantics - maybe too complex and indirect.
 
 Like I observed these appear to largely reproduce the <setmeta> behavior, then
 question becomes whether we even need them and what semantics would make them
@@ -500,7 +507,24 @@ just read and understand wtf is happening:
   (define t {<m> (:a 1) (:c 'c)})
 #+end_src
 
-*** TODO Allow #:kw args in {} constructors
+**** idea 1
+
+#:kw traits are tried in this order:
+1. +externally defined with ~define-keyword-trait~:+
+   - get the handler from ~#%table-keyword-traits~ table,
+   - it must be a higher order function that takes the keyword option and returns
+     a function that takes table instance and returns a table,
+   - #%table effectively does ((handler option) t);
+2. function: t -> t, #%table simply calls it (option t)
+3. table:
+   - if has :<setmeta> #:table will call it (setmeta t),
+   - else do nothing.
+
+*** DONE Allow #:kw args in {} constructors
+CLOSED: [2019-06-06 Thu 13:59]
+- State "DONE"       from "TODO"       [2019-06-06 Thu 13:59] \\
+  Have a sketch that works, important task is to figure reasonable and simple
+  semantics. Definitely work to do.
 - State "TODO"       from "STARTED"    [2019-06-05 Wed 17:40]
 - State "TODO"       from "STARTED"    [2019-06-02 Sun 11:54] \\
   It's actually not obvious how to allow #:kw args under the assumption that users
@@ -548,8 +572,10 @@ Expand into ~#%table~, which we expose and let the user override.
 (#%table ...)
 #+end_src
 
-*** TODO #:check syntax for <spec>
+*** DONE #:check syntax for <spec>
+CLOSED: [2019-06-06 Thu 13:59]
 
+- State "DONE"       from "TODO"       [2019-06-06 Thu 13:59]
 *** DONE <spec> metatable
 CLOSED: [2019-06-05 Wed 10:07]
 - State "DONE"       from "STARTED"    [2019-06-05 Wed 10:07] \\
@@ -565,6 +591,7 @@ CLOCK: [2019-06-05 Wed 09:50]--[2019-06-05 Wed 10:07] =>  0:17
 CLOCK: [2019-06-04 Tue 16:23]--[2019-06-04 Tue 18:36] =>  2:13
 CLOCK: [2019-06-02 Sun 08:35]--[2019-06-02 Sun 10:52] =>  2:17
 :END:
+**** Thoughts on <spec>
 
 With spec we achieve two things:
 1. communicate what instance slots we expect,
@@ -1000,7 +1027,7 @@ So for now at least lets keep multiple inheritance lookup separate from dispatch
 and method combinations. Multiple inheritance gives us very clear and precise
 semantics for simple method lookup and precedence.
 
-** TODO <mixin> and <trait>
+** TODO mixins and traits
 
 As I've observed while adding #:kw options to {} table constructors their
 (probably) most likely use is to basically mix in some behaviours that augment or
@@ -1037,6 +1064,8 @@ use:
                                (:c symbol?)}
                        <table>))
 #+end_src
+
+Another question is whether <mixin> and <trait> metatables might be meaningful?
 
 ** Multiple dispatch
 

@@ -344,24 +344,25 @@
                 ((~and key:expr (~not (~literal quote))) value:expr)))))
 
 
-(define #%table-keyword-traits (ht))
-
-
-(define-simple-macro (define-keyword-trait kw:keyword e:expr)
-  (let ((proc e))
-    (unless (procedure? e)
-      (raise-argument-error 'define-keyword-trait "procedure?" proc))
-    (dict-set! #%table-keyword-traits 'kw e)))
+;; NOTE #:kw trait is either a table whose action is encoded in the :<setmeta>
+;; method (not metamethod), or a procedure. I am uneasy about the whole thing
+;; particularly table + <setmeta> idea, mostly because without extra work this
+;; trait's <setmeta> doesn't have access to the trait. But if such cases are rare
+;; (e.g. <spec>) then we can always do the same indirection trick: <setmeta>
+;; metamethod installs trait's <setmeta> that closes over the trait.
 
 
 (define (add-traits t opts)
   (for/fold ((t t))
-            (((kw opt) (in-dict opts)))
-    (define handler (dict-ref #%table-keyword-traits kw))
-    (let ((handled (handler t opt)))
-      (unless (eq? handled t)
-        (error "expected handler to return the same table instance"))
-      t)))
+            ((opt (in-list opts)))
+    (match-define (list kw trait) opt)
+    (define handler (if (table? trait)
+                        (or? (dict-ref trait :<setmeta>) identity)
+                        trait))
+    (let ((handled (handler t)))
+      (unless (table? handled)
+        (error '#%table "expected ~a trait to return table? got ~a" kw handled))
+      handled)))
 
 
 (define-syntax (#%table stx)
@@ -370,7 +371,7 @@
                             ;; doesn't seem to effect paren shape in error msg
                             (syntax-property (syntax/loc stx {e ...}) 'paren-shape #\{)))
     ((_ mt:id options:option ... entry:table-entry ...)
-     (syntax/loc stx (let* ((opts (ht ('options.kw options.opt) ...))
+     (syntax/loc stx (let* ((opts (list (list 'options.kw options.opt) ...))
                             (h (ht entry ...))
                             (t (table h mt))
                             (metamethod (or? (meta-dict-ref t :<setmeta>) identity))
@@ -378,6 +379,10 @@
                                                #:when (undefined? v))
                                       k)))
                        (for-each (curry dict-remove! h) undefs)
+                       ;; TODO runtime error reporting here is not great - shows
+                       ;; full expansion in trace. Is there a way to show in terms
+                       ;; of actual expression i.e. table constructor? Case in
+                       ;; point when <spec> contract fails.
                        (add-traits (metamethod t) opts))))))
 
 
@@ -438,25 +443,20 @@
 ;; RHS should be able to capture which subcontract failed exactly, but I dunno
 ;; how that works. Ditto contract error reporting facilities.
 
-
 (define <spec>
-  {(:<proc> (case-lambda
-              ((spec t)
-               (for (((k pred?) (in-dict spec)))
-                 ;; TODO should this be get instead of dict-ref?
-                 (unless (pred? (dict-ref t k))
-                   (error '#%table "slot ~a violated its contract" k)))
-               t)
-              ((spec t k v)
-               (define pred? (or? (dict-ref spec k) (const #t)))
-               (unless (pred? v)
-                 (error 'set "slot ~a violated its contract" k))
-               t)))})
-
-
-;; TODO inherit from <spec> so (isa? {<only>} <spec>) => #t
-(define <only>
-  {(:<proc> (case-lambda
+  {(:open (case-lambda
+            ((spec t)
+             (for (((k pred?) (in-dict spec)))
+               ;; TODO should this be get instead of dict-ref?
+               (unless (pred? (dict-ref t k))
+                 (error '#%table "slot ~a violated its contract" k)))
+             t)
+            ((spec t k v)
+             (define pred? (or? (dict-ref spec k) (const #t)))
+             (unless (pred? v)
+               (error 'set "slot ~a violated its contract" k))
+             t)))
+   (:closed (case-lambda
               ((spec t)
                (define slots (list->mutable-seteq (dict-keys t)))
                (for (((k pred?) (in-dict spec)))
@@ -471,38 +471,32 @@
                                   (const (error 'set "slot ~a not allowed by <spec>" k))))
                (unless (pred? v)
                  (error 'set "slot ~a violated its contract" k))
-               t)))})
+               t)))
+   (:setmeta (λ (spec)
+               (set spec :<setmeta>
+                    (λ (mt)
+                      ;; remove :<setmeta> slot from :check table - ugly
+                      (rm spec :<setmeta>)
+                      (set mt :check spec)
+                      (set mt :<setmeta> (λ (t) (t:check)))
+                      (set mt :<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))
+                      mt))))})
 
 
-(define-keyword-trait #:check
-  (λ (t option)
-    ;; (unless (isa? option <spec>) (error "<spec> expected"))
-    (set t :check option)
-    (set t :<setmeta> (λ (t) (t:check)))
-    (set t :<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))))
+(define <open> {<spec> (:<proc> <spec>.open)
+                       (:<setmeta> <spec>.setmeta)})
 
 
-(comment
- (define <m> {#:check {<spec> (:a (or/c undefined? natural?))
-                              (:b (or/c undefined? symbol?))
-                              (:c symbol?)}})
- ;; TODO trace shows expanded result here which is not helpful, try to manipulate
- ;; #:context in macros to get something better?
- ;; {<m>}
- (define ttt {<m> (:a 1) (:c 'c)})
- (set ttt :c 42)
- ;; comment
- )
+(define <closed> {<spec> (:<proc> <spec>.closed)
+                         (:<setmeta> <spec>.setmeta)})
 
 
 (module+ test
 
-  (test-case "<spec>"
-    (define/checked <mt> {(:check {<spec> (:a (or/c undefined? natural?))
+  (test-case "<open>"
+    (define/checked <mt> {#:check {<open> (:a (or/c undefined? natural?))
                                           (:b (or/c undefined? symbol?))
-                                          (:c symbol?)})
-                          (:<setmeta> (λ (t) (t:check)))
-                          (:<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))})
+                                          (:c symbol?)}})
     (define/checked t {<mt> (:a 1) (:c 'c)})
     ;; :c must be present
     (check-exn exn? (thunk {<mt>}) "slot :c violated its contract")
@@ -515,12 +509,10 @@
     (check-eq? (get (set t :b 'b) :b) 'b))
 
 
-  (test-case "<only>"
-    (define/checked <mt> {(:check {<only> (:a (or/c undefined? natural?))
-                                          (:b (or/c undefined? symbol?))
-                                          (:c symbol?)})
-                          (:<setmeta> (λ (t) (t:check)))
-                          (:<set> (λ (t k v) (t:check k v) (dict-set! t k v) t))})
+  (test-case "<closed>"
+    (define/checked <mt> {#:check {<closed> (:a (or/c undefined? natural?))
+                                            (:b (or/c undefined? symbol?))
+                                            (:c symbol?)}})
     (define/checked t {<mt> (:a 1) (:c 'c)})
     ;; only speced slots allowed
     (check-exn exn? (thunk {<mt> (:a 1) (:d 4)}) "slots (:d) not allowed")
