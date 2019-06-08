@@ -710,14 +710,27 @@ metamethod doing necessary checks!
 
 ** . : .. :: syntax
 
-*** TODO Implement define/table
+*** DONE Implement define/table
+CLOSED: [2019-06-08 Sat 17:01]
 
-**** TODO allow id-style (define t.k val)
+- State "DONE"       from "TODO"       [2019-06-08 Sat 17:01]
+Turns out Racket already ships [[file:~/Code/racket/racket/doc/syntax/transformer-helpers.html?q=normalize-definition#%2528part._define%2529][transformer helpers to parse define-like forms]]. Not
+much left for me to do.
 
-**** TODO allow function-nesting (define ((foo.bar a) b) body)
+**** DONE allow id-style (define t.k val)
+CLOSED: [2019-06-08 Sat 17:01]
 
-**** TODO replace Racket's define
+- State "DONE"       from "TODO"       [2019-06-08 Sat 17:01]
+**** DONE allow function-nesting (define ((foo.bar a) b) body)
+CLOSED: [2019-06-08 Sat 17:00]
 
+- State "DONE"       from "TODO"       [2019-06-08 Sat 17:00] \\
+  TIL [[file:~/Code/racket/racket/doc/syntax/transformer-helpers.html?q=normalize-definition#%2528def._%2528%2528lib._syntax%252Fdefine..rkt%2529._normalize-definition%2529%2529][normalize-definition]] in Racket that does the heavy-lifting.
+**** DONE make define/tables drop-in replacement for Racket's define
+CLOSED: [2019-06-08 Sat 16:59]
+
+- State "DONE"       from "TODO"       [2019-06-08 Sat 16:59] \\
+  For #lang racket/tables I just need to provide with rename-out.
 *** DONE Implement t..k and t::k
 CLOSED: [2019-06-07 Fri 13:25]
 - State "DONE"       from "STARTED"    [2019-06-07 Fri 13:25] \\
@@ -1620,6 +1633,8 @@ Probably just have ~isa~ cond with Racket predicates and return corresponding
 table e.g.
 
 * TIL in Racket
+
+** [[file:~/Code/racket/racket/doc/syntax/transformer-helpers.html?q=normalize-definition#%2528def._%2528%2528lib._syntax%252Fdefine..rkt%2529._normalize-definition%2529%2529][normalize-definition]] to parse define-like macros                    :TIL:
 
 ** logging e.g. at macro expansion time                                :TIL:
 

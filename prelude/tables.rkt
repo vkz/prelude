@@ -14,7 +14,8 @@
 (provide #%top #%app #%table #%.
          get set meta-dict-ref
          <table>
-         tag?)
+         tag?
+         define/table)
 
 
 (module+ test
@@ -597,3 +598,105 @@
     (check-exn exn? (thunk {<mtt>}) "slot :! violated its contract")
     (check-eq? (get {<mtt> (:! '!)} :!) '!)
     (check-eq? (get {<mtt> (:! '!) (:? '?)} :?) '?)))
+
+
+;;* define ------------------------------------------------------- *;;
+
+
+(begin-for-syntax
+
+  (require syntax/define)
+
+  (define (λ/self λ self)
+    (syntax-parse λ
+      ((_ rest:id body ...)
+       #:with self self
+       (syntax/loc λ (lambda (self . rest) body ...)))
+
+      ((_ (arg ...) body ...)
+       #:with self self
+       (syntax/loc λ (lambda (self arg ...) body ...))))))
+
+
+;; TODO Unless I screwed up define/table should be a drop-in replacement for
+;; Racket's define. So #lang racket/tables should provide rename-out as define.
+(define-syntax (define/table stx)
+
+  (syntax-parse stx
+    ((_ (~var id (table-sep-key "..")) rhs:expr)
+     ;; (define t..k val) =>
+     (syntax/loc stx
+       (begin
+         (define t..k rhs)
+         (void (set (table-meta id.table) 'id.tag t..k)))))
+
+    ((_ (~var id (table-sep-key ".")) rhs:expr)
+     ;; (define t.k val) =>
+     (syntax/loc stx
+       (begin
+         (define t.k rhs)
+         (void (set id.table 'id.tag t.k)))))
+
+    ((_ (~var id (table-sep-key "::")) rhs:expr)
+     ;; (define t::k val) =>
+     (syntax/loc stx
+       (begin
+         (define t::k rhs)
+         (void (set (table-meta id.table) 'id.tag t::k)))))
+
+    ((_ (~var id (table-sep-key ":")) rhs:expr)
+     ;; (define t:k val) =>
+     (syntax/loc stx
+       (begin
+         (define t:k rhs)
+         (void (set id.table 'id.tag t:k)))))
+
+    ((_ id:id rhs:expr)
+     ;; (define id val) =>
+     (syntax/loc stx (define id rhs)))
+
+    (_
+     ;; (define (t..k ...) body)
+     ;; (define (t.k ...) body)
+     ;; (define (t::k ...) body)
+     ;; (define (t:k ...) body)
+     ;; (define (id ...) body)
+     ;; =>
+     (let-values (((id rhs) (normalize-definition stx #'lambda #t #t)))
+       (cond
+         ((table-sep-key? id ".." ".")
+          (with-syntax ((λ rhs)
+                        (id id))
+            (syntax/loc stx (define/table id λ))))
+
+         ((table-sep-key? id "::" ":")
+          (with-syntax ((λ (λ/self rhs (datum->syntax id 'self)))
+                        (id id))
+            (syntax/loc stx (define/table id λ))))
+
+         (else
+          (with-syntax ((λ rhs)
+                        (id id))
+            (syntax/loc stx (define id λ)))))))))
+
+
+(module+ test
+  (test-case "define/table"
+    (define t {})
+    (checked (define/table t.a 1))
+    (checked (define/table t.b 2))
+    (checked (define/table (t.foo a) a))
+    (check-eq? (t.foo 1) 1)
+    (checked (define/table ((t.bar a) b) (+ a b)))
+    (check-eq? ((t.bar 1) 2) 3)
+    (checked (define/table (t.baz a #:b (b 2)) (+ a b)))
+    (check-eq? (t.baz 1) 3)
+    (check-eq? (t.baz 1 #:b 0) 1)
+    (checked (define/table (t:get k) (get self k)))
+    (check-eq? (t:get :a) 1)
+    (checked (define/table ((t:get+ k1) k2) (+ (self:get k1) (self:get k2))))
+    (check-eq? ((t:get+ :a) :b) 3)
+    (checked (define/table (t:get* . keys) (apply + (map (curry get self) keys))))
+    (check-eq? (t:get* :a :b) 3)
+    (define/table a 1)
+    (check-eq? a 1)))
