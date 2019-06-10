@@ -1101,7 +1101,8 @@ So for now at least lets keep multiple inheritance lookup separate from dispatch
 and method combinations. Multiple inheritance gives us very clear and precise
 semantics for simple method lookup and precedence.
 
-** TODO mixins and traits
+** IDEA mixins and traits
+CLOSED: [2019-06-10 Mon 13:40]
 
 As I've observed while adding #:kw options to {} table constructors their
 (probably) most likely use is to basically mix in some behaviours that augment or
@@ -1312,7 +1313,7 @@ dispatch to see if the below idea even works.
 
   ;; say we have the following metatables defined
   (define <a> {<table> (:meth (λ (self a b #:kw c d) (push 'a (get d :vals))))})
-  (define <b> {<b> (:meth (λ (self a b #:kw c d)
+  (define <b> {<a> (:meth (λ (self a b #:kw c d)
                             ;; calls <a>.meth
                             (when self.next-method
                               ;; bit of ugliness here, notice the . not : that is

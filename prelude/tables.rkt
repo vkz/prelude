@@ -270,6 +270,57 @@
           (else (raise-argument-error '<get> "table or procedure" metamethod))))))
 
 
+;;* isa? --------------------------------------------------------- *;;
+
+;; TODO shoud we rename these into meta and meta? respectively?
+
+;; TODO built-ins
+(define (isa t) (table-meta t))
+
+
+(define (isa? t <mt>)
+  ;; TODO built-ins
+  (define mt (table-meta t))
+  (define metamethod (meta-dict-ref t :<isa?>))
+  ;; TODO should we check (eq? t <mt>)? Kinda makes sense but it would be
+  ;; inconsistent with our isa definition above.
+  (or (eq? mt <mt>)
+      (cond
+        ((table? metamethod) (or (eq? metamethod <mt>) (isa? metamethod <mt>)))
+        ((procedure? metamethod) (t:<isa?> <mt>))
+        ((undefined? metamethod) #f)
+        (else (raise-argument-error '<isa?> "table or procedure" metamethod)))
+      ;; continue search up the metatable chain
+      (and
+       (table? mt)
+       (isa? mt <mt>))))
+
+
+(module+ test
+  (define/checked <mt0> {})
+  (define/checked <mt1> {<mt0>})
+  (define/checked <mt2> {(:<isa?> <mt1>)})
+  (define/checked <mt3> {(:<isa?> (λ (self mt) (or (eq? <mt2> mt) (eq? <mt1> mt))))})
+  (check-true (isa? {} <table>))
+
+  (check-true (isa? <mt0> <table>))
+  (check-true (isa? {<mt0>} <mt0>))
+
+  (check-true (isa? {<mt1>} <mt0>))
+  (check-true (isa? {<mt1>} <table>))
+
+  (check-true (isa? <mt2> <table>))
+  (check-false (isa? <mt2> <mt1>))
+  (check-true (isa? {<mt2>} <mt2>))
+  (check-true (isa? {<mt2>} <mt1>))
+  (check-true (isa? {<mt2>} <mt0>))
+
+  (check-true (isa? {<mt3>} <mt3>))
+  (check-true (isa? {<mt3>} <mt2>))
+  (check-true (isa? {<mt3>} <mt1>))
+  (check-false (isa? {<mt3>} <mt0>)))
+
+
 ;;* set ---------------------------------------------------------- *;;
 
 
