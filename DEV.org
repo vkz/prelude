@@ -787,8 +787,11 @@ them with ~apply~? Something like this would do the trick, but seems frivolous:
   (f a b . rest-id)
 #+end_src
 
-** TODO Make tables "Racket first-class"
+** DONE Make tables "Racket first-class"
+CLOSED: [2019-06-10 Mon 11:38]
 
+- State "DONE"       from "TODO"       [2019-06-10 Mon 11:38] \\
+  For now we rely of Racket struct-info to reflect table constructor procedure.
 *** Thoughts about extending Racket struct underlying tables
 
 Being "first class" isn't enough, tables must embrace the Racket ecosystem. That
@@ -833,26 +836,57 @@ If we are going with a macro expanding into ~struct~ or ~define-struct~ it would
 pay to expand into ~define-struct/derived~ so that errors are reported in terms of
 the name user supplies rather than whatever struct syntax we expand into.
 
-*** TODO Add prop:evt to table struct
+*** DONE Add prop:evt to table struct
+CLOSED: [2019-06-10 Mon 11:16]
+- State "DONE"       from "STARTED"    [2019-06-10 Mon 11:16] \\
+  We achieve this by relying on Racket reflection with [[file:~/Code/racket/racket/doc/reference/inspectors.html#%2528def._%2528%2528quote._~23~25kernel%2529._struct-info%2529%2529][struct-info]] to obtain the
+  most specific struct type of the metatable passed to the constructor and
+  [[file:~/Code/racket/racket/doc/reference/inspectors.html#%2528def._%2528%2528quote._~23~25kernel%2529._struct-type-make-constructor%2529%2529][struct-type-make-constructor]] to actually construct an instance of the extended
+  table struct type. This is cute and even preserves the struct type as you start to
+  derive new metatables. It does requere however that the new table struct is
+  #:transparent and doesn't add any new fields.
+:LOGBOOK:
+CLOCK: [2019-06-10 Mon 09:33]--[2019-06-10 Mon 11:16] =>  1:43
+:END:
 
-*** TODO Implement struct-like macro that extends table struct
+*** IDEA table-struct macro to extend table struct
+
+This is only required assuming current #:table implementation that uses struct
+reflection to obtain the constructor procedure. For it to work correctly table
+struct must be #:transparent and not add any extra fields, hence the need to limit
+user options somewhat.
 
 Would essentially act as a Racket struct macro that inherits  from table struct.
 About the only thing it needs to do is passthrough any props, generic interfaces
 and struct fields supplied.
 
-Crux of the problem though is making the rest of tables machinery work with this
-extended version of a table. E.g. constructors must still work but would have to
-somehow be told which struct to use.
+#+begin_src racket
+  (table-struct table-evt
+                #:property prop:evt (λ (t) (get t :evt))
+                #:methods gen:foo
+                ((define (foo t) body)))
+  ;; expand
+  ;; =>
+  (struct table-evt table ()
+    #:mutable
+    #:transparent
+    #:property prop:evt (λ (t) (get t :evt))
+    #:methods gen:foo
+    ((define (foo t) body)))
+#+end_src
 
-*** TODO Test extending struct by adding interesting properties
+*** IDEA carry table struct constructor on a slot
 
-Candidates:
-- prop:input-port and prop:output-port,
-- prop:stream or prop:sequence,
-- ???
+Possibly alternative solution for extending table structs that doesn't rely on
+reflection and would let the user add fields.
 
-*** TODO Test extending struct by implementing interesting gen interfaces
+We still require that extend table-struct inherits from table. But user may add
+fields and make it not #:transparent or whatever. However, that means they need to
+somehow supply the constructor procedure as well as any additional arguments. One
+obvious way to do that is to pass the procedure as a metatable slot.
+
+I dunno how I feel about this, we maybe giving the user too much space here with
+little benefit.
 
 *** DONE Ask the mailing list
 CLOSED: [2019-05-22 Wed 16:42]
@@ -1633,6 +1667,19 @@ Probably just have ~isa~ cond with Racket predicates and return corresponding
 table e.g.
 
 * TIL in Racket
+
+** precedence of prop:evt prop:input-port prop:output-port             :TIL:
+
+#+begin_quote
+If the structure type has more than one of prop:evt, prop:input-port, and
+prop:output-port, then the prop:evt value (if any) takes precedence for
+determining the instance’s behavior as an event, and the prop:input-port property
+takes precedence over prop:output-port for synchronization.
+#+end_quote
+
+Basically, doesn't make a tremendous amount of sense to have those combined on the
+same struct, sigh. At least as far as tables go then it's probably better to just
+store events and ports as slots.
 
 ** [[file:~/Code/racket/racket/doc/syntax/transformer-helpers.html?q=normalize-definition#%2528def._%2528%2528lib._syntax%252Fdefine..rkt%2529._normalize-definition%2529%2529][normalize-definition]] to parse define-like macros                    :TIL:
 

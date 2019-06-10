@@ -184,6 +184,7 @@
   ;; gen:equal+hash interface. Basically, we fallback on the default equal? Would
   ;; need to revisit if this becomes a perf bottleneck or table semantics changes.
   #:transparent
+  #:constructor-name make-table
 
   #:property prop:procedure table-procedure
 
@@ -222,11 +223,11 @@
 (module+ test
 
   (test-case "<proc>"
-    (define <proc> (table (ht (:<proc> dict-ref)) undefined))
-    (define <kwproc> (table (ht (:<proc> (λ (t #:key key) (dict-ref t key)))) undefined))
-    (check-eq? ((table (ht (:a 1)) <proc>) :a) 1)
-    (check-eq? ((table (ht (:a 1)) <kwproc>) #:key :a) 1)
-    (check-exn exn? (thunk ((table (ht) undefined) 1)) "table has no <proc>"))
+    (define <proc> (make-table (ht (:<proc> dict-ref)) undefined))
+    (define <kwproc> (make-table (ht (:<proc> (λ (t #:key key) (dict-ref t key)))) undefined))
+    (check-eq? ((make-table (ht (:a 1)) <proc>) :a) 1)
+    (check-eq? ((make-table (ht (:a 1)) <kwproc>) #:key :a) 1)
+    (check-exn exn? (thunk ((make-table (ht) undefined) 1)) "table has no <proc>"))
 
   (test-case "equality"
     (define <mt> {(:b 2)})
@@ -238,7 +239,7 @@
 (module+ test
 
   (test-case "gen:dict"
-    (define t (table (ht (:a 1)) undefined))
+    (define t (make-table (ht (:a 1)) undefined))
     (check-true (dict-has-key? t :a))
     (check-eq? (dict-ref t :a) 1)
     (check-true (undefined? (dict-ref t :b)))
@@ -246,8 +247,8 @@
     (check-eq? (dict-ref t :b) 2))
 
   (test-case "gen:associative"
-    (define tb (table (ht (:b 1)) undefined))
-    (define ta (table (ht (:a tb)) undefined))
+    (define tb (make-table (ht (:b 1)) undefined))
+    (define ta (make-table (ht (:a tb)) undefined))
     (check-eq? (get: ta :a :b) 1)
     (check-not-exn (thunk (set: ta :a :c 2)))
     (check-eq? (get: ta :a :c) 2)))
@@ -289,11 +290,11 @@
 
 (module+ test
 
-  (define/checked mt (table (ht (:b 2)) undefined))
-  (define/checked t (table #;t (ht (:a 1)) #;mt mt))
-  (define/checked tt (table #;t (ht) #;mt t))
-  (define/checked t<get>proc (table #;t (ht) #;mt (table (ht (:<get> (λ (_ key) (get t key)))) undefined)))
-  (define/checked t<get>table (table #;t (ht) #;mt (table (ht (:<get> t)) undefined)))
+  (define/checked mt (make-table (ht (:b 2)) undefined))
+  (define/checked t (make-table #;t (ht (:a 1)) #;mt mt))
+  (define/checked tt (make-table #;t (ht) #;mt t))
+  (define/checked t<get>proc (make-table #;t (ht) #;mt (make-table (ht (:<get> (λ (_ key) (get t key)))) undefined)))
+  (define/checked t<get>table (make-table #;t (ht) #;mt (make-table (ht (:<get> t)) undefined)))
 
   (test-case "get: when mt is a table"
     (check-eq? (get t :a) 1)
@@ -343,13 +344,10 @@
     (check-eq? (get t :e) 5)))
 
 
-;;* <hierarchy> -------------------------------------------------- *;;
-
-
-(define <table> (table (ht) undefined))
-
-
 ;;* #%table ------------------------------------------------------ *;;
+
+
+(define <table> (make-table (ht) undefined))
 
 
 (begin-for-syntax
@@ -391,6 +389,27 @@
       handled)))
 
 
+(define (table-maker t)
+  (define-values (table-type _) (struct-info (if (table? t) t <table>)))
+  (struct-type-make-constructor table-type))
+
+
+;; TODO We allow extending table struct by defining new Racket structs that
+;; inherit from table. We'd like the default constructor i.e. {} and therefore
+;; #%table to work seemlessly with any such extended structs. To that purpose we
+;; reflect constructor procedure from the metatable instance (see table-maker used
+;; below). However, for this cute trick to work the derived structs must not
+;; define any extra fields and they must be #:transparent so that the most
+;; specific struct type maybe reflected. To make such extensions less brittle we
+;; may need to provide a struct-like macro to limit user options. Alternatively,
+;; user could supply a constructor procedure explicitly as a slot on the metatable
+;; instance. Present implementation has a cute feature where inheritance just
+;; works and any descendants of an extended struct are of that type e.g. if you
+;; construct with table/evt, any subsequent metatables and their instances will be
+;; table/evt? To achieve consistent metatable isa relations with constructor slot
+;; idea such slot may need to be looked up on the metatable chain with get.
+
+
 (define-syntax (#%table stx)
   (syntax-parse stx
     #:context (list '|{}| (with-syntax (((_ e ...) stx))
@@ -399,7 +418,8 @@
     ((_ mt:id options:option ... entry:table-entry ...)
      (syntax/loc stx (let* ((opts (list (list 'options.kw options.opt) ...))
                             (h (ht entry ...))
-                            (t (table h mt))
+                            (make-table (table-maker mt))
+                            (t (make-table h mt))
                             (metamethod (or? (meta-dict-ref t :<setmeta>) identity))
                             (undefs (for/list (((k v) (in-mutable-hash h))
                                                #:when (undefined? v))
@@ -700,3 +720,27 @@
     (check-eq? (t:get* :a :b) 3)
     (define/table a 1)
     (check-eq? a 1)))
+
+
+;;* <table/evt> -------------------------------------------------- *;;
+
+
+(struct table/evt table ()
+  ;; NOTE must be #:transparent with current implementation of #:table that relies
+  ;; on reflection to get the most specific struct type
+  #:transparent
+  #:property prop:evt (λ (t) (get t :evt)))
+
+
+(define <table/evt> (table/evt (ht) <table>))
+
+
+(module+ test
+  (test-case "<table/evt>"
+    (define/checked evt {<table/evt> (:a 1) (:evt (open-input-string "42"))})
+    (check-true (table? evt))
+    (check-true (table/evt? evt))
+    (check-eq? (read (sync evt)) 42)
+    ;; gen:dict should be inherited from table
+    (check-eq? (dict-ref evt :a) 1)
+    (check-eq? (get evt :a) 1)))
