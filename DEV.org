@@ -955,10 +955,20 @@ to generalize this. To use your analogy I'd like to find out if there's a way to
 "leave the hood open" in a clean way or at least let the user do the "passthrough"
 trick without the need to dismantle the entire car.
 
-** TODO <tables> for multiple inheritance
+** DONE <tables> for multiple inheritance
+CLOSED: [2019-06-10 Mon 23:08]
 
-*** TODO constructor: <setmeta> metamethod semantics
+- State "DONE"       from "TODO"       [2019-06-10 Mon 23:08] \\
+  Concessions made: metatables are sorted by their corresponding keys in the
+  <tables> instance with ~symbol<?~. Perhaps a better solution would be to sort in
+  table insertion order, but (ht) doesn't support that, would need a different
+  data-structure. Current implementation is ok, too. Alternatively, I could just
+  accept metatables in a list i.e. preordered, but keys in a table look cleaner.
+*** DONE constructor: <setmeta> metamethod semantics
+CLOSED: [2019-06-10 Mon 23:07]
 
+- State "DONE"       from "TODO"       [2019-06-10 Mon 23:07] \\
+  To my surprise didn't need <setmeta> at all.
 Here's how a basic lookup in presence of multiple inheritance may look like. Note
 this does not answer how method invocation with method combination might work.
 
@@ -1020,8 +1030,12 @@ this does not answer how method invocation with method combination might work.
            #:meta <tables>}}
 #+end_src
 
-*** TODO accessor: <get> metamethod semantics
+*** DONE accessor: <get> metamethod semantics
+CLOSED: [2019-06-10 Mon 23:05]
 
+- State "DONE"       from "TODO"       [2019-06-10 Mon 23:05] \\
+  Simple but tricky: need to allow lookup on table-meta of self (<tables>) cause
+  otherwise e.g. isa? is unable to reach :<isa?> metamethod.
 #+begin_src racket
   ;; :<get> is fully dynamic, that is it makes no assumption about parents and
   ;; instead looks them up every time its called.
@@ -1031,8 +1045,10 @@ this does not answer how method invocation with method combination might work.
       (get parent key)))
 #+end_src
 
-*** TODO identity: <isa?> metamethod semantics
+*** DONE identity: <isa?> metamethod semantics
+CLOSED: [2019-06-10 Mon 23:03]
 
+- State "DONE"       from "TODO"       [2019-06-10 Mon 23:03]
 Now questions of identity and subtyping. Need to review this part. Leaning towards
 having :<isa> and :<isa?> as metamethods.
 

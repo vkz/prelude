@@ -795,3 +795,52 @@
     ;; gen:dict should be inherited from table
     (check-eq? (dict-ref evt :a) 1)
     (check-eq? (get evt :a) 1)))
+
+
+;;* <tables> ----------------------------------------------------- *;;
+
+
+(define <tables> {})
+
+
+(define/table (<tables>:<isa?> mt)
+  (define tables self)
+  (for/or ((t (in-dict-values tables)))
+    (or (eq? t mt)
+        (isa? t mt))))
+
+
+(define/table (<tables>:<get> k)
+  ;; TODO for now order is induced by symbolic keys, at least until we start using
+  ;; insertion ordered hash-maps for table contents. Alternative would be to store
+  ;; parent tables in a list under e.g. :tables
+  (define tables (map (curry get self) (sort (dict-keys self) symbol<?)))
+  ;; TODO implement ormap? for/or? for/first?
+  (or (for/or ((t (in-list tables)))
+        (let ((v (get t k)))
+          (or? v #f)))
+      (get (table-meta self) k)
+      undefined))
+
+
+(module+ test
+  (test-case "<tables>"
+    (define/checked <mt1> {(:do-1 (λ (t) t.a))
+                           (:do (λ (t) (t:do-1)))})
+
+    (define/checked <mt2> {(:do-2 (λ (t) t.b))
+                           (:do (λ (t) (t:do-2)))})
+
+
+    (define/checked <mts> {<tables> (:mt1 <mt1>)
+                                    (:mt2 <mt2>)})
+
+    (define/checked ts {<mts> (:a 1) (:b 2)})
+    (check-eq? (ts:do) 1)
+    (check-eq? (ts:do-1) 1)
+    (check-eq? (ts:do-2) 2)
+    (check-true (isa? ts <tables>))
+    (check-true (isa? ts <mts>))
+    (check-true (isa? ts <mt1>))
+    (check-true (isa? ts <mt2>))
+    (check-true (isa? ts <table>))))
