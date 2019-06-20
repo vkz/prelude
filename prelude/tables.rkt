@@ -12,8 +12,20 @@
 
 
 (provide #%top #%app #%table #%.
-         get set meta-dict-ref
+         get set rm meta-dict-ref
+         isa isa?
+         table?
+         table-meta table-dict
+         ;; TODO while providing these maybe useful, they are effectively "raw"
+         ;; procedures to manipulate table structs a-la our gen:dict interface. We
+         ;; may want to also provide set-meta and set-dict that call metamethods
+         ;; e.g. <setmeta> as needed, so more like our set procedure would.
+         set-table-meta! set-table-dict!
          <table>
+         <spec> <open> <closed>
+         required optional ! ?
+         <tables>
+         <table/evt>
          tag?
          define/table)
 

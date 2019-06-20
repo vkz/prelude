@@ -710,6 +710,50 @@ metamethod doing necessary checks!
 
 ** . : .. :: syntax
 
+*** TODO . and : for method application
+
+#+begin_src racket
+  ;; having this
+  (apply. t k a b rest)
+  (apply: t k a b rest)
+
+  (.meth t a b c)
+  (:meth t a b c)
+  ;; desugar =>
+  (let ((t t)) (t.meth a b c))
+  (let ((t t)) (t:meth a b c))
+
+  ;; TODO but would that work in ~> ?
+  (. t k a b c)
+  (: t k a b c)
+  ;; desugar =>
+  (let ((t t) (k k)) (t.k a b c))
+  (let ((t t) (k k)) (t:k a b c))
+#+end_src
+
+and for completeness impl the same for .. and ::
+
+*** IDEA t.k? t:k?
+CLOSED: [2019-06-11 Tue 13:06]
+
+Shorthand syntax that potentially returns undefined or #f (to better interface
+with Racket). Possible checks:
+- unless (table? t) return undefined
+- unless (procedure? t:k) return (const undefined).
+
+Basically the idea is to where it makes sense to get back the nil behavior of
+sorts. Maybe even have: get?
+- check that (table? t) else return undefined.
+
+*** IDEA t.k! t:k!
+CLOSED: [2019-06-11 Tue 13:48]
+
+This one is probably too crazy, but maybe a fun macro exercise. Let these
+automatically bind the looked up value to t.k and t:k respectively, so that the
+next lookup simply retrieves the value without going through get. Challenge here
+is to identify the nearest binding introducing scope. I think this should be
+possible in Racket even if nuts.
+
 *** DONE Implement define/table
 CLOSED: [2019-06-08 Sat 17:01]
 
@@ -770,22 +814,6 @@ CLOCK: [2019-06-02 Sun 21:07]--[2019-06-02 Sun 21:33] =>  0:26
 CLOCK: [2019-06-02 Sun 17:06]--[2019-06-02 Sun 17:23] =>  0:17
 CLOCK: [2019-06-02 Sun 15:06]--[2019-06-02 Sun 16:46] =>  1:40
 :END:
-
-*** IDEA Allow . and : operators in app position
-
-Both receiver and slot can be computed. This is about the only reason to have this
-particular feature. We could simply replace it with (send ...).
-
-Not so obvious that I even want . : in app position. For instance, how would I use
-them with ~apply~? Something like this would do the trick, but seems frivolous:
-
-#+begin_src racket
-  (. t :method a b #:apply (list c d))
-  (: t :method a b #:apply (list c d))
-  ;; more generally, for any application
-  (f a b #:apply (list c d))
-  (f a b . rest-id)
-#+end_src
 
 ** DONE Make tables "Racket first-class"
 CLOSED: [2019-06-10 Mon 11:38]
@@ -1157,6 +1185,27 @@ use:
 #+end_src
 
 Another question is whether <mixin> and <trait> metatables might be meaningful?
+
+** TODO Immutable tables
+
+First, we'd have to use immutable hash-table as dictionary. Assuming we've done
+that, there are at least two ways to go about it.
+
+Try to provide immutability completely within tables protocol as e.g. <itable>.
+Here's what may suffice:
+- define <set> metamethod that's immutable,
+- define <itable>'s <setmeta> metamethod so that it adds our new <set> metamethod
+  to every instance's metatable as well as transports its <setmeta> to instance's
+  metatable.
+
+I think such <itable> idea would work. However it would require some care from the
+user if they ever wanted to define their own <set> and <setmeta>. At the very
+minimum they may need to have their metamethods invoke our <set> and/or <setmeta>
+(probably, just <setmeta>) before doing anything else. Still, it'd make for a
+nifty little trick.
+
+Alternatively, we could always roll out ~#%table~ and ~set~ only perform immutable
+operations.
 
 ** Multiple dispatch
 
