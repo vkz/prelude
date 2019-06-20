@@ -780,7 +780,11 @@
   ;; NOTE must be #:transparent with current implementation of #:table that relies
   ;; on reflection to get the most specific struct type
   #:transparent
-  #:property prop:evt (λ (t) (get t :evt)))
+  #:property prop:evt (λ (t)
+                        (define evt (get t :evt))
+                        (cond
+                          ((evt? evt) evt)
+                          ((procedure? evt) (evt t)))))
 
 
 (define <table/evt> (table/evt (ht) <table>))
