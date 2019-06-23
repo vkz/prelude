@@ -4,7 +4,8 @@
 (require racket/struct
          racket/generic
          (for-syntax syntax/parse
-                     racket/match))
+                     racket/match)
+         (submod prelude/tables logic))
 
 
 ;;* Provides -------------------------------------------------------- *;;
@@ -12,7 +13,8 @@
 
 (provide table table? set-meta-table! get-meta-table rawset! app top
          define/table
-         tag? tag->string)
+         tag? tag->string
+         (all-from-out (submod prelude/tables logic)))
 
 
 (module+ test

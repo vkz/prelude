@@ -1,4 +1,4 @@
-#lang prelude
+#lang racket
 
 
 (require racket/struct
@@ -9,6 +9,9 @@
          (only-in racket
                   [#%top racket/#%top]
                   [#%app racket/#%app]))
+
+
+(require (only-in prelude ht get: set:))
 
 
 (provide #%top #%app #%table #%.
@@ -27,7 +30,8 @@
          <tables>
          <table/evt>
          tag?
-         define/table)
+         define/table
+         (all-from-out 'logic))
 
 
 (module+ test
@@ -41,6 +45,77 @@
     (with-logging-to-port (current-output-port)
       (λ () (log-debug "~a" v))
       'debug)))
+
+
+;;* undefined aware logic ---------------------------------------- *;;
+
+
+(module logic racket
+
+  (require racket/undefined)
+  (provide (all-defined-out) undefined)
+
+  (define (undefined? e)
+    (eq? undefined e))
+
+
+  (define (some? val)
+    ;; should I also treat null as #f?
+    (if (undefined? val) #f val))
+
+
+  (define (none? val)
+    (not (some? val)))
+
+
+  (define-syntax or?
+    (syntax-rules ()
+      ((_ e) e)
+      ((_ e1 e ...) (or (some? e1) (or? e ...)))))
+
+
+  (define-syntax and?
+    (syntax-rules ()
+      ((_ e) e)
+      ((_ e1 e ...) (let ((test e1))
+                      (if (some? test) (and? e ...) test)))))
+
+
+  (define-syntax-rule (if? test then else)
+    (if (some? test) then else))
+
+
+  (define-syntax-rule (when? test body ...)
+    (when (some? test) body ...))
+
+
+  (define-syntax-rule (unless? test body ...)
+    (when (none? test) body ...))
+
+  ;; TODO cond?
+  ;; TODO when-let, if-let
+  )
+
+
+(require 'logic)
+
+
+(module+ test
+  (test-case "or? and? combinators"
+    ;; or?
+    (check-eq? (or? undefined #f 42) 42)
+    (check-eq? (or? 42) 42)
+    (check-eq? (or? #f) #f)
+    (check-eq? (or? undefined) undefined)
+    (check-eq? (or? #f undefined) undefined)
+    (check-eq? (or? undefined #f undefined) undefined)
+    ;; and?
+    (check-eq? (and? 42) 42)
+    (check-eq? (and? #f) #f)
+    (check-eq? (and? undefined) undefined)
+    (check-eq? (and? undefined #f undefined) undefined)
+    ;; or? and? combined
+    (check-eq? (and? (or? undefined 42) (or? undefined) 42) undefined)))
 
 
 ;;* :tags -------------------------------------------------------- *;;
@@ -431,7 +506,7 @@
                 ((~and key:expr (~not (~literal quote))) value:expr)))))
 
 
-;; NOTE #:kw trait is either a table whose action is encoded in the :<setmeta>
+;; TODO #:kw trait is either a table whose action is encoded in the :<setmeta>
 ;; method (not metamethod), or a procedure. I am uneasy about the whole thing
 ;; particularly table + <setmeta> idea, mostly because without extra work this
 ;; trait's <setmeta> doesn't have access to the trait. But if such cases are rare

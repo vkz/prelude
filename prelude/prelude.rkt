@@ -3,13 +3,6 @@
 
 (provide comment
          example
-         undefined?
-         some?
-         none?
-         or?
-         and?
-         if?
-         when?
          associative-on-key-missing
          gen:associative
          get: set:
@@ -20,8 +13,8 @@
 
 (require (for-syntax syntax/parse)
          racket/generic
-         racket/undefined
-         prelude/tilda)
+         prelude/tilda
+         racket/undefined)
 
 
 (define-syntax-rule (comment . any) (void))
@@ -33,61 +26,6 @@
 
 (module+ test
   (require rackunit))
-
-
-(define (undefined? e)
-  (eq? undefined e))
-
-
-(define (some? val)
-  ;; should I also treat null as #f?
-  (if (undefined? val) #f val))
-
-
-(define (none? val)
-  (not (some? val)))
-
-
-(define-syntax or?
-  (syntax-rules ()
-    ((_ e) e)
-    ((_ e1 e ...) (or (some? e1) (or? e ...)))))
-
-
-(define-syntax and?
-  (syntax-rules ()
-    ((_ e) e)
-    ((_ e1 e ...) (let ((test e1))
-                    (if (some? test) (and? e ...) test)))))
-
-(module+ test
-  (test-case "or? and? combinators"
-    ;; or?
-    (check-eq? (or? undefined #f 42) 42)
-    (check-eq? (or? 42) 42)
-    (check-eq? (or? #f) #f)
-    (check-eq? (or? undefined) undefined)
-    (check-eq? (or? #f undefined) undefined)
-    (check-eq? (or? undefined #f undefined) undefined)
-    ;; and?
-    (check-eq? (and? 42) 42)
-    (check-eq? (and? #f) #f)
-    (check-eq? (and? undefined) undefined)
-    (check-eq? (and? undefined #f undefined) undefined)
-    ;; or? and? combined
-    (check-eq? (and? (or? undefined 42) (or? undefined) 42) undefined)))
-
-
-(define-syntax-rule (if? test then else)
-  (if (some? test) then else))
-
-
-(define-syntax-rule (when? test body ...)
-  (when (some? test) body ...))
-
-
-;; TODO cond?
-;; TODO when-let, if-let
 
 
 (module+ test
