@@ -4,8 +4,7 @@
 (require racket/struct
          racket/generic
          (for-syntax syntax/parse
-                     racket/match)
-         (submod prelude/tables logic))
+                     racket/match))
 
 
 ;;* Provides -------------------------------------------------------- *;;
@@ -14,7 +13,7 @@
 (provide table table? set-meta-table! get-meta-table rawset! app top
          define/table
          tag? tag->string
-         (all-from-out (submod prelude/tables logic)))
+         (all-from-out 'logic))
 
 
 (module+ test
@@ -25,6 +24,59 @@
 ;; TODO we must hide all lua struct fields, getters and setters - anything that
 ;; may hint to the user of prelude that tables aren't just values but structs.
 ;; IIUC struct and provide have necessary facilities, just need to use em.
+
+
+;;* undefined aware logic ---------------------------------------- *;;
+
+
+(module logic racket
+
+  (require racket/undefined)
+  (provide (all-defined-out) undefined)
+
+  (define (undefined? e)
+    (eq? undefined e))
+
+
+  (define (some? val)
+    ;; should I also treat null as #f?
+    (if (undefined? val) #f val))
+
+
+  (define (none? val)
+    (not (some? val)))
+
+
+  (define-syntax or?
+    (syntax-rules ()
+      ((_ e) e)
+      ((_ e1 e ...) (or (some? e1) (or? e ...)))))
+
+
+  (define-syntax and?
+    (syntax-rules ()
+      ((_ e) e)
+      ((_ e1 e ...) (let ((test e1))
+                      (if (some? test) (and? e ...) test)))))
+
+
+  (define-syntax-rule (if? test then else)
+    (if (some? test) then else))
+
+
+  (define-syntax-rule (when? test body ...)
+    (when (some? test) body ...))
+
+
+  (define-syntax-rule (unless? test body ...)
+    (when (none? test) body ...))
+
+  ;; TODO cond?
+  ;; TODO when-let, if-let
+  )
+
+
+(require 'logic)
 
 
 ;;* Lua tables ------------------------------------------------------ *;;
